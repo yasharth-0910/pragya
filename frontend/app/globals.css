@@ -1,0 +1,197 @@
+@import "tailwindcss";
+
+/* Tell Tailwind v4 to switch theme on the `.dark` class (set by next-themes)
+   instead of the OS media query, so the toggle button can override the system. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ── Color tokens — DESIGN.md §2 ───────────────────────────────────────────
+   Theme-dependent tokens. The light ("paper") values live on both :root and
+   .light; declaring them on .light too lets any subtree be forced into a mode
+   regardless of the <html> class (the token test page shows both at once). */
+:root,
+.light {
+  --bg-main: #f5f1e8;
+  --bg-subtle: #efe9db;
+  --bg-card: #fdfbf5;
+  --text-primary: #2c2820;
+  --text-muted: #6f6657;
+  --border: #e7e0cf;
+  --input-border: #d9d0ba;
+  --chip-bg: #ece5d4;
+  --chip-text: #7a6c4d;
+  /* Terminal ring (DESIGN.md §2 hard rules) — the one allowed "shadow". */
+  --terminal-ring: #ece5d4;
+}
+
+.dark {
+  --bg-main: #1b1916;
+  --bg-subtle: #1e1b16;
+  --bg-card: #242019;
+  --text-primary: #ece5d4;
+  --text-muted: #9a9180;
+  --border: #332e25;
+  --input-border: #3a342a;
+  --chip-bg: #2e2922;
+  --chip-text: #c9b98c;
+  --terminal-ring: #26221c;
+}
+
+/* Constants — IDENTICAL in both modes, never themed (DESIGN.md §2). */
+:root {
+  --ink: #211e19;
+  --ink-2: #2c2820;
+  --terminal: #1f1c17;
+  --terminal-line: #2e2a22;
+  --accent: #e8c87e;
+  --paper: #f5f1e8;
+  /* Terminal internals (DESIGN.md §5). Terminal is always dark, so these are
+     constants too — surfaced as tokens so components never hardcode hex. */
+  --terminal-text: #d8d2c4;
+  --terminal-dim: #7d7567;
+  --terminal-dot: #4a443a;
+}
+
+/* ── Tailwind wiring — DESIGN.md §4 ────────────────────────────────────────
+   `@theme inline` so each utility emits `var(--token)` directly and re-resolves
+   when .dark flips. Fonts map to font-serif/sans/mono; colors give utilities
+   like bg-main, text-primary, border-border, bg-accent. Components reference
+   these tokens only — never raw hex. */
+@theme inline {
+  --font-serif: var(--font-fraunces);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains-mono);
+
+  /* theme-dependent */
+  --color-main: var(--bg-main);
+  --color-subtle: var(--bg-subtle);
+  --color-card: var(--bg-card);
+  --color-primary: var(--text-primary);
+  --color-muted: var(--text-muted);
+  --color-border: var(--border);
+  --color-input: var(--input-border);
+  --color-chip: var(--chip-bg);
+  --color-chip-text: var(--chip-text);
+
+  /* constants */
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-terminal: var(--terminal);
+  --color-terminal-line: var(--terminal-line);
+  --color-terminal-text: var(--terminal-text);
+  --color-terminal-dim: var(--terminal-dim);
+  --color-terminal-dot: var(--terminal-dot);
+  --color-accent: var(--accent);
+  --color-paper: var(--paper);
+}
+
+body {
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+}
+
+/* ── Mode crossfade — DESIGN.md §4 ─────────────────────────────────────────
+   .45s ease on the themed properties only. Interactive hover transitions
+   (≤.2s, §6) declare their own `transition` and override this via specificity. */
+*,
+*::before,
+*::after {
+  transition: background-color 0.45s ease, color 0.45s ease,
+    border-color 0.45s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none;
+  }
+}
+
+/* ── Motion — DESIGN.md §6 ─────────────────────────────────────────────────
+   Page-load rise: opacity 0 + translateY(14px) → settled, .7s. Stagger is set
+   per element via inline animation-delay (~120ms steps) in the components. */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.rise {
+  opacity: 0;
+  animation: rise 0.7s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+/* Terminal response fade-in (.5s) after the query finishes typing. */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.fade-in {
+  animation: fade-in 0.5s ease both;
+}
+
+/* Blinking amber terminal cursor — 1s, hard on/off via steps. */
+@keyframes blink {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.terminal-cursor {
+  animation: blink 1s steps(2, jump-none) infinite;
+}
+
+/* Interactive controls: hover/active feedback ≤.2s (§6). Declares its own
+   transition so it overrides the global .45s crossfade on these elements. */
+.interactive {
+  transition: background-color 0.18s ease, border-color 0.18s ease,
+    color 0.18s ease, opacity 0.18s ease, transform 0.18s ease;
+}
+
+/* Highlighter mark behind hero text (§7.2): amber ::after bar, opacity .6,
+   sat behind the text via z-index:-1. */
+.hl-mark {
+  position: relative;
+  z-index: 0;
+}
+
+.hl-mark::after {
+  content: "";
+  position: absolute;
+  left: -0.05em;
+  right: -0.05em;
+  bottom: 0.08em;
+  height: 0.4em;
+  background-color: var(--accent);
+  opacity: 0.6;
+  z-index: -1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise,
+  .fade-in {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  .terminal-cursor {
+    animation: none;
+  }
+  .interactive {
+    transition: none;
+  }
+}
