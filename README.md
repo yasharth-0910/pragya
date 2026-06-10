@@ -11,38 +11,6 @@ Employees ask questions like "How many casual leaves do I get?" and get answers 
 - **Department-level access control** — enforced at the vector-database layer; users only see answers from their department's documents
 - **Multi-format support** — ingests PDFs, Word documents, and slide decks with page numbers preserved
 
-## Latest changes
-
-- Commit `e994b3a` — Feat: Add Landing Page (Yasharth Singh, 2026-06-10)
-   - Added a Next.js landing page under `frontend/` (app routes, components, and static assets).
-   - Added a minimal FastAPI backend scaffold under `backend/` (`config.py`, `database.py`, `qdrant.py`, `main.py`, `models/`, and `requirements.txt`).
-   - Added project-level `.gitignore` and a `frontend/README.md` with Next.js instructions.
-
-Quick start notes for these additions:
-
-- Frontend (Next.js)
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-- Backend (FastAPI)
-```bash
-cd backend
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-python -m uvicorn main:app --reload
-```
-
-- Qdrant (vector DB)
-```bash
-docker run -p 6333:6333 qdrant/qdrant:latest
-```
-
-See `frontend/README.md` for Next-specific notes and `backend/requirements.txt` for backend dependencies.
-
 ## Screenshots
 
 ![Landing page — hero with terminal demo showing the RAG flow](frontend/public/landing-screenshot.png)

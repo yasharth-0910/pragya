@@ -48,3 +48,8 @@ claude_logs/
 CLAUDE.md
 DESIGN.md
 .claude/
+.claude/.env
+backend/venv/
+__pycache__/
+*.pyc
+backend/__pycache__

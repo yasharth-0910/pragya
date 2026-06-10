@@ -1,0 +1,40 @@
+# Pragya backend dependencies.
+# Pinned to major/minor lines with `~=` (compatible release): pip is free to take
+# patch updates within the line, but won't jump a breaking major version. Keeps
+# the build reproducible enough for a 6-week project without over-locking.
+
+# ── Web framework / server ────────────────────────────────────────────────
+fastapi~=0.115              # async API framework
+uvicorn[standard]~=0.34     # ASGI server; [standard] adds uvloop + httptools (speed)
+python-multipart~=0.0.20    # required by FastAPI to parse file uploads / form data
+
+# ── Database (Neon Postgres, async) ───────────────────────────────────────
+sqlalchemy[asyncio]~=2.0    # ORM; [asyncio] pulls greenlet for async sessions
+asyncpg~=0.30               # async Postgres driver SQLAlchemy talks to
+alembic~=1.14               # schema migrations (autogenerate from models)
+
+# ── Config ────────────────────────────────────────────────────────────────
+pydantic-settings~=2.7      # typed settings loaded from .env
+python-dotenv~=1.0          # loads the .env file into the environment
+
+# ── Auth (JWT + bcrypt, no OAuth) ─────────────────────────────────────────
+python-jose[cryptography]~=3.3   # JWT encode/decode; [cryptography] = the signing backend
+passlib[bcrypt]~=1.7             # password hashing; [bcrypt] = the hashing algorithm
+
+# ── Vector DB ─────────────────────────────────────────────────────────────
+qdrant-client~=1.12         # Qdrant client (dense + sparse hybrid search)
+
+# ── AI / ML ───────────────────────────────────────────────────────────────
+google-generativeai~=0.8    # Gemini embeddings + chat
+sentence-transformers~=3.3  # cross-encoder reranker (downloads ~85MB model on first run)
+
+# ── Document parsing ──────────────────────────────────────────────────────
+PyMuPDF~=1.25               # PDF parsing (fitz) — keeps page numbers
+python-docx~=1.1            # .docx parsing
+python-pptx~=1.0            # .pptx parsing
+
+# ── Evaluation ────────────────────────────────────────────────────────────
+ragas~=0.2                  # RAG metrics: faithfulness, answer relevancy, context precision
+
+# ── HTTP ──────────────────────────────────────────────────────────────────
+httpx~=0.28                 # async HTTP client (async API calls, tests)

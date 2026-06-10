@@ -48,9 +48,9 @@ export default function TerminalDemo() {
       <div className="overflow-hidden rounded-[12px] bg-terminal shadow-[0_0_0_6px_var(--terminal-ring)]">
         {/* Title bar — three monochrome window dots (§5). */}
         <div className="flex items-center gap-2 border-b border-terminal-line px-4 py-3">
-          <span className="h-[10px] w-[10px] rounded-full bg-terminal-dot" />
-          <span className="h-[10px] w-[10px] rounded-full bg-terminal-dot" />
-          <span className="h-[10px] w-[10px] rounded-full bg-terminal-dot" />
+          <span className="h-[10px] w-[10px] rounded-full border border-black/10 bg-[#ff5f57]" />
+          <span className="h-[10px] w-[10px] rounded-full border border-black/10 bg-[#ffbd2e]" />
+          <span className="h-[10px] w-[10px] rounded-full border border-black/10 bg-[#28c840]" />
         </div>
 
         {/* Body */}
