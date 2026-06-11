@@ -8,16 +8,16 @@ import type { MessageSource } from "@/types";
 import ChatMessage from "@/components/chat/ChatMessage";
 import ChatInput from "@/components/chat/ChatInput";
 
-// Local view-model for a rendered turn. Mirrors a ChatMessage but also tracks the
-// transient streaming/error/timing state the API's persisted shape doesn't carry.
+// Local view-model for a rendered turn.
 type UIMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
   sources?: MessageSource[] | null;
-  traceMs?: number; // client-measured send→[DONE]; only on a fresh turn
+  traceMs?: number;
   streaming?: boolean;
   error?: string;
+  createdAt: number; // ms timestamp — used for relative-time display (Fix 4a)
 };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -26,7 +26,29 @@ const uid = () =>
     ? crypto.randomUUID()
     : Math.random().toString(36).slice(2);
 
-/* ── Topbar theme toggle, styled for the paper surface ─────────────────────── */
+// Relative time for message timestamps (updated every minute by a page-level tick).
+function msgRelativeTime(ms: number): string {
+  const sec = Math.floor((Date.now() - ms) / 1000);
+  if (sec < 60) return "just now";
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
+  return `${Math.floor(sec / 86400)}d ago`;
+}
+
+function getGreeting(): string {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+const SUGGESTION_CHIPS = [
+  "What documents are available?",
+  "Summarize the latest upload",
+  "What are the key policies?",
+] as const;
+
+/* ── Topbar theme toggle ──────────────────────────────────────────────────── */
 function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -71,18 +93,22 @@ function ChatInner() {
   const [docCount, setDocCount] = useState<number | null>(null);
   const [deptName, setDeptName] = useState<string | null>(null);
 
+  // Lifted text state so suggestion chips can prefill the input (Fix 4c)
+  const [inputText, setInputText] = useState("");
+
+  // Single page-level tick every 60s — causes relative timestamps to refresh (Fix 4a)
+  const [, setTick] = useState(0);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<AbortController | null>(null);
   const startRef = useRef<number>(0);
-  // Which session's transcript is currently loaded — guards the URL effect from
-  // re-fetching (and clobbering a freshly streamed turn) on our own replaceState.
   const loadedSessionRef = useRef<string | null | undefined>(undefined);
 
   const updateMsg = useCallback((id: string, patch: Partial<UIMessage>) => {
     setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)));
   }, []);
 
-  // Doc-count chip + dept name chip resolved in parallel
+  // Doc-count chip + dept name
   useEffect(() => {
     getDocuments()
       .then((d) => setDocCount(d.length))
@@ -95,16 +121,20 @@ function ChatInner() {
       .catch(() => {});
   }, []);
 
-  // Load a conversation when the URL ?session= changes (sidebar click, refresh,
-  // or a new-chat navigation to /chat with no param). Skips when the URL already
-  // matches what's loaded, so our own replaceState after the first answer is a no-op.
+  // One timer for all relative timestamps — avoids N timers for N messages
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Load a conversation when the URL ?session= changes
   useEffect(() => {
     const sid = searchParams.get("session");
     if (sid === loadedSessionRef.current) return;
     loadedSessionRef.current = sid;
     setSessionId(sid);
     if (!sid) {
-      setMessages([]); // /chat with no session = a fresh, empty conversation
+      setMessages([]);
       return;
     }
     let cancelled = false;
@@ -117,6 +147,7 @@ function ChatInner() {
             role: m.role as "user" | "assistant",
             content: m.content,
             sources: m.sources,
+            createdAt: new Date(m.created_at).getTime(),
           }))
         );
       })
@@ -128,25 +159,20 @@ function ChatInner() {
     };
   }, [searchParams]);
 
-  // Auto-scroll to the newest content (also fires as tokens append).
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
-  // Abort an in-flight stream if the user navigates away mid-answer.
   useEffect(() => () => controllerRef.current?.abort(), []);
 
-  // After [DONE]: discover the (possibly new) session id, sync the URL, then pull
-  // the persisted sources. The assistant row is written server-side just after
-  // [DONE], so we retry briefly until it appears (race with the stream's close).
   async function finalize(aiId: string) {
     let sid = sessionId;
     if (!sid) {
       const sessions = await getSessions().catch(() => []);
       if (sessions.length > 0) {
-        sid = sessions[0].id; // sessions are ordered by most-recent activity
+        sid = sessions[0].id;
         setSessionId(sid);
-        loadedSessionRef.current = sid; // pre-claim so the URL effect won't reload
+        loadedSessionRef.current = sid;
         window.history.replaceState(null, "", `?session=${sid}`);
       }
     }
@@ -155,8 +181,6 @@ function ChatInner() {
     for (let attempt = 0; attempt < 6; attempt++) {
       const msgs = await getSessionMessages(sid).catch(() => []);
       const last = msgs[msgs.length - 1];
-      // Once the last persisted message is the assistant's, its sources are final
-      // (null for an ungrounded / "no info" answer — that's correct, not a miss).
       if (last && last.role === "assistant") {
         updateMsg(aiId, { sources: last.sources ?? null });
         return;
@@ -168,12 +192,13 @@ function ChatInner() {
   function handleSend(text: string) {
     if (streaming) return;
 
-    const userMsg: UIMessage = { id: uid(), role: "user", content: text };
+    const now = Date.now();
+    const userMsg: UIMessage = { id: uid(), role: "user", content: text, createdAt: now };
     const aiId = uid();
-    const aiMsg: UIMessage = { id: aiId, role: "assistant", content: "", streaming: true };
+    const aiMsg: UIMessage = { id: aiId, role: "assistant", content: "", streaming: true, createdAt: now };
     setMessages((prev) => [...prev, userMsg, aiMsg]);
     setStreaming(true);
-    startRef.current = Date.now();
+    startRef.current = now;
 
     let acc = "";
     controllerRef.current = queryChat(text, sessionId ?? undefined, {
@@ -225,45 +250,87 @@ function ChatInner() {
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-5">
         {isEmpty ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-            <span className="h-2 w-2 rounded-full bg-accent" />
-            <p className="max-w-sm font-serif text-[17px] leading-[1.4] text-muted">
-              Ask anything about your department&rsquo;s documents
-            </p>
+          /* ── Empty state: time-based greeting + suggestion chips (Fix 4c) ── */
+          <div className="flex h-full flex-col items-center justify-center gap-5 text-center">
+            <div>
+              <p className="font-serif text-[22px] tracking-[-0.02em] text-primary">
+                {getGreeting()}
+              </p>
+              <p className="mt-1.5 font-sans text-[13.5px] text-muted">
+                Ask anything about your department&rsquo;s documents
+              </p>
+            </div>
+            <div className="flex flex-wrap justify-center gap-2">
+              {SUGGESTION_CHIPS.map((chip) => (
+                <button
+                  key={chip}
+                  type="button"
+                  onClick={() => setInputText(chip)}
+                  className="interactive rounded-full border border-input bg-card px-3.5 py-2 font-sans text-[12.5px] text-primary hover:bg-subtle active:scale-[0.97]"
+                >
+                  {chip}
+                </button>
+              ))}
+            </div>
           </div>
         ) : (
           <div className="mx-auto flex max-w-3xl flex-col gap-4">
             {messages.map((m) =>
               m.role === "user" ? (
-                <div key={m.id} className="flex justify-end">
-                  <div className="max-w-[75%] whitespace-pre-wrap rounded-[14px] rounded-br-[3px] bg-ink-2 px-4 py-2.5 font-sans text-[14px] leading-[1.6] text-paper">
-                    {m.content}
+                /* User bubble */
+                <div key={m.id}>
+                  <div className="flex justify-end">
+                    <div className="max-w-[75%] whitespace-pre-wrap rounded-[14px] rounded-br-[3px] bg-ink-2 px-4 py-2.5 font-sans text-[14px] leading-[1.6] text-paper">
+                      {m.content}
+                    </div>
+                  </div>
+                  {/* Relative timestamp — bottom-right of bubble (Fix 4a) */}
+                  <div className="mt-0.5 text-right font-mono text-[10px] text-muted">
+                    {msgRelativeTime(m.createdAt)}
                   </div>
                 </div>
               ) : m.error ? (
+                /* Error bubble — amber left border (Fix 4d) */
                 <div key={m.id} className="flex justify-start">
-                  <div className="max-w-[85%] rounded-[14px] rounded-tl-[3px] border border-border bg-card px-4 py-3 font-sans text-[13px] leading-[1.6] text-muted">
-                    {m.error}
+                  <div>
+                    <div className="max-w-[85%] rounded-[8px] border border-border border-l-[3px] border-l-accent bg-card px-4 py-3 font-sans text-[13px] leading-[1.6] text-primary">
+                      {m.error}
+                    </div>
+                    <div className="mt-0.5 font-mono text-[10px] text-muted">
+                      {msgRelativeTime(m.createdAt)}
+                    </div>
                   </div>
                 </div>
               ) : (
-                <ChatMessage
-                  key={m.id}
-                  content={m.content}
-                  sources={m.sources}
-                  traceMs={m.traceMs}
-                  streaming={m.streaming}
-                />
+                /* Assistant message with markdown + copy button (Fix 4a + Fix 1) */
+                <div key={m.id}>
+                  <ChatMessage
+                    content={m.content}
+                    sources={m.sources}
+                    traceMs={m.traceMs}
+                    streaming={m.streaming}
+                  />
+                  {!m.streaming && (
+                    <div className="mt-0.5 font-mono text-[10px] text-muted">
+                      {msgRelativeTime(m.createdAt)}
+                    </div>
+                  )}
+                </div>
               )
             )}
           </div>
         )}
       </div>
 
-      {/* Input */}
+      {/* Input — controlled by ChatInner so chips can prefill (Fix 4c) */}
       <div className="border-t border-border px-5 py-4">
         <div className="mx-auto max-w-3xl">
-          <ChatInput onSend={handleSend} disabled={streaming} />
+          <ChatInput
+            value={inputText}
+            onChange={setInputText}
+            onSend={handleSend}
+            disabled={streaming}
+          />
         </div>
       </div>
     </div>

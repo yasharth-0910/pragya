@@ -26,6 +26,13 @@ function extensionOf(filename: string): string {
   return filename.includes(".") ? filename.split(".").pop()!.toUpperCase() : "FILE";
 }
 
+function formatFileSize(bytes: number | null): string {
+  if (bytes == null) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 type DocumentCardProps = { doc: Document };
 
 export default function DocumentCard({ doc }: DocumentCardProps) {
@@ -71,11 +78,19 @@ export default function DocumentCard({ doc }: DocumentCardProps) {
             <span className="shrink-0 rounded-[4px] bg-chip px-1.5 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.1em] text-chip-text">
               {extensionOf(doc.original_filename)}
             </span>
+            {/* Intelligence ready badge — shown once summary has been generated (Fix 5b) */}
+            {isReady && doc.summary != null && (
+              <span className="shrink-0 rounded-[4px] bg-accent px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.08em] text-ink">
+                Intelligence ready
+              </span>
+            )}
           </div>
 
-          {/* Tiny meta line — chunk count once known. */}
+          {/* Meta line — chunk count + file size once known (Fix 5c) */}
           {isReady && chunkCount != null && (
-            <div className="mt-1 font-mono text-[10px] text-muted">{chunkCount} chunks</div>
+            <div className="mt-1 font-mono text-[10px] text-muted">
+              {chunkCount} chunks{formatFileSize(doc.file_size) ? ` · ${formatFileSize(doc.file_size)}` : ""}
+            </div>
           )}
 
           <div className="mt-2.5">

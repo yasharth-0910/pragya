@@ -1,7 +1,5 @@
 "use client";
 
-import { useState } from "react";
-
 // Up-arrow for the send button — ink-colored on the amber circle (DESIGN.md §5).
 function SendArrow() {
   return (
@@ -18,28 +16,29 @@ function SendArrow() {
 }
 
 type ChatInputProps = {
+  // Controlled: parent owns text state so suggestion chips can prefill the input.
+  value: string;
+  onChange: (value: string) => void;
   onSend: (text: string) => void;
   // True while a previous answer is streaming — input + send are locked.
   disabled?: boolean;
 };
 
 // Pill input + amber circular send button. No <form> (DESIGN.md); Enter submits.
-export default function ChatInput({ onSend, disabled }: ChatInputProps) {
-  const [text, setText] = useState("");
-
+export default function ChatInput({ value, onChange, onSend, disabled }: ChatInputProps) {
   function submit() {
-    const trimmed = text.trim();
+    const trimmed = value.trim();
     if (!trimmed || disabled) return;
     onSend(trimmed);
-    setText("");
+    onChange(""); // clear after sending
   }
 
   return (
     <div className="flex items-center gap-2 rounded-full border border-input bg-card py-1.5 pl-5 pr-1.5">
       <input
         type="text"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter") submit();
         }}
@@ -50,7 +49,7 @@ export default function ChatInput({ onSend, disabled }: ChatInputProps) {
       <button
         type="button"
         onClick={submit}
-        disabled={disabled || text.trim().length === 0}
+        disabled={disabled || value.trim().length === 0}
         aria-label="Send"
         className="interactive flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-ink hover:opacity-90 active:scale-[0.96] disabled:opacity-40"
       >

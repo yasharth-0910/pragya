@@ -38,8 +38,12 @@ function UploadIcon() {
 function AdminIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M12 2v2M12 20v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M2 12h2M20 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path
+        d="M12 2L3 7v5c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -353,14 +357,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
         )}
 
-        {/* ── Search bar (UI only) ────────────────────────────────────── */}
+        {/* ── Search bar ─────────────────────────────────────────────── */}
         {!collapsed && (
           <div className="px-3 pb-3">
-            <div className="flex items-center gap-2 rounded-[8px] border border-[#322d24] px-3 py-2 text-paper/40">
+            {/* focus-within triggers amber glow — deliberate DESIGN.md exception (focus ring) */}
+            <label className="flex cursor-text items-center gap-2 rounded-[8px] border border-[#322d24] px-3 py-2 text-paper/40 transition-shadow focus-within:shadow-[0_0_0_2px_rgba(232,200,126,0.3)]">
               <SearchIcon />
-              <span className="flex-1 font-sans text-[12.5px]">Search</span>
+              <input
+                type="text"
+                placeholder="Search"
+                className="flex-1 bg-transparent font-sans text-[12.5px] placeholder:text-paper/40 focus:outline-none"
+              />
               <span className="font-mono text-[10px] tracking-[0.04em]">⌘K</span>
-            </div>
+            </label>
           </div>
         )}
         {collapsed && (
@@ -377,9 +386,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
         {/* ── Nav scrolls if content overflows ───────────────────────── */}
         <nav className="flex-1 overflow-y-auto px-2">
-          {/* Section label — hidden when collapsed */}
+          {/* Section label with hairline separator */}
           {!collapsed && (
-            <div className="px-2 pb-2 font-mono text-[10px] uppercase tracking-[0.1em] text-paper/40">
+            <div className="mb-2 border-b border-[#322d24] px-2 pb-2 font-mono text-[10px] uppercase tracking-[0.12em] text-paper/40">
               Workspace
             </div>
           )}
@@ -510,13 +519,28 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </button>
             </div>
           ) : (
-            /* Expanded: user pill + actions */
+            /* Expanded: user pill with avatar circle + role badge */
             <div className="flex items-center justify-between">
               <div className="flex min-w-0 items-center gap-2 px-1">
-                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+                {/* 28px avatar circle — first letter of name */}
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#322d24] font-serif text-[13px] text-paper/90">
+                  {name?.[0]?.toUpperCase() ?? "U"}
+                </span>
                 <div className="min-w-0">
-                  <div className="truncate font-sans text-[11px] text-paper/85">
-                    {name ?? "Account"}
+                  <div className="flex items-center gap-1.5">
+                    <span className="truncate font-sans text-[11px] text-paper/85">
+                      {name ?? "Account"}
+                    </span>
+                    {/* Role badge */}
+                    {claims?.role === "admin" ? (
+                      <span className="shrink-0 rounded-[3px] bg-accent px-1 py-px font-mono text-[8.5px] uppercase tracking-[0.08em] text-ink">
+                        Admin
+                      </span>
+                    ) : (
+                      <span className="shrink-0 font-mono text-[8.5px] uppercase tracking-[0.08em] text-paper/35">
+                        {claims?.role === "viewer" ? "Viewer" : "Member"}
+                      </span>
+                    )}
                   </div>
                   <div className="truncate font-mono text-[10px] uppercase tracking-[0.08em] text-paper/40">
                     {deptName ?? "—"}

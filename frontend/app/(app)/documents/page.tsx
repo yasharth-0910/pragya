@@ -41,9 +41,17 @@ export default function DocumentsPage() {
           </div>
 
           {loaded && documents.length === 0 ? (
-            <p className="rounded-[12px] border border-border bg-card px-4 py-8 text-center font-sans text-[13.5px] text-muted">
-              No documents yet. Upload a PDF, Word, or slide deck to get started.
-            </p>
+            /* Empty state — cloud icon + serif heading + muted subline (Fix 5a) */
+            <div className="flex flex-col items-center gap-3 rounded-[12px] border border-border bg-card px-4 py-10 text-center">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="text-muted">
+                <path d="M18 10a6 6 0 0 0-12 0 4 4 0 0 0 0 8h12a4 4 0 0 0 0-8Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+                <path d="M12 13v4m0 0-2-2m2 2 2-2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <div>
+                <p className="font-serif text-[16px] tracking-[-0.01em] text-primary">No documents yet</p>
+                <p className="mt-1 font-sans text-[13px] text-muted">Upload a PDF, Word doc, or slide deck to get started.</p>
+              </div>
+            </div>
           ) : (
             <div className="space-y-2.5">
               {documents.map((doc) => (

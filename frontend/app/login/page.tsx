@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ApiError, createDepartment, getDepartments, login, register, updateMe } from "@/lib/api";
-import { isLoggedIn, saveToken } from "@/lib/auth";
+import { getUser, isLoggedIn, saveToken } from "@/lib/auth";
 import type { Department } from "@/types";
 
 function LogoMark() {
@@ -31,6 +31,8 @@ export default function LoginPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [selectedDeptId, setSelectedDeptId] = useState<string>("");
   const [newDeptName, setNewDeptName] = useState("");
+  // Whether the "create new department" inline form is expanded (admin-only edge case)
+  const [creatingNew, setCreatingNew] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -48,6 +50,7 @@ export default function LoginPage() {
     setPassword("");
     setNewDeptName("");
     setSelectedDeptId("");
+    setCreatingNew(false);
   }
 
   // ── Step 1: register (or sign in for existing users) ─────────────────────
@@ -92,9 +95,8 @@ export default function LoginPage() {
   async function handleStep2() {
     if (loading) return;
     setError(null);
-    const isCreating = departments.length === 0;
 
-    if (isCreating && !newDeptName.trim()) {
+    if (creatingNew && !newDeptName.trim()) {
       setError("Department name is required.");
       return;
     }
@@ -103,8 +105,7 @@ export default function LoginPage() {
     try {
       let deptId = selectedDeptId;
 
-      if (isCreating) {
-        // First user: create the org's first department
+      if (creatingNew) {
         const dept = await createDepartment(newDeptName.trim());
         deptId = dept.id;
       }
@@ -126,7 +127,8 @@ export default function LoginPage() {
   const inputClass =
     "interactive w-full rounded-full border border-input bg-card px-5 py-3 font-sans text-[14px] text-primary placeholder:text-muted focus:border-accent focus:outline-none";
 
-  const isCreatingDept = isSignup && step === 2 && departments.length === 0;
+  // After registration, getUser() returns claims from the freshly saved JWT
+  const isAdmin = getUser()?.role === "admin";
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-main px-6">
@@ -156,8 +158,8 @@ export default function LoginPage() {
               ? "Sign in"
               : step === 1
                 ? "Create account"
-                : isCreatingDept
-                  ? "Create your department"
+                : creatingNew
+                  ? "Create new department"
                   : "Choose your department"}
           </h1>
 
@@ -197,21 +199,8 @@ export default function LoginPage() {
               </>
             )}
 
-            {/* ── Step 2: new department ── */}
-            {step === 2 && isCreatingDept && (
-              <input
-                type="text"
-                value={newDeptName}
-                onChange={(e) => setNewDeptName(e.target.value)}
-                onKeyDown={onKeyDown}
-                placeholder="Department name (e.g. Engineering)"
-                autoFocus
-                className={inputClass}
-              />
-            )}
-
-            {/* ── Step 2: pick existing department ── */}
-            {step === 2 && !isCreatingDept && (
+            {/* ── Step 2: department selector ── */}
+            {step === 2 && !creatingNew && (
               <select
                 value={selectedDeptId}
                 onChange={(e) => setSelectedDeptId(e.target.value)}
@@ -224,6 +213,30 @@ export default function LoginPage() {
                 ))}
               </select>
             )}
+
+            {/* ── Step 2: create new department (admin-only) ── */}
+            {step === 2 && creatingNew && (
+              <input
+                type="text"
+                value={newDeptName}
+                onChange={(e) => setNewDeptName(e.target.value)}
+                onKeyDown={onKeyDown}
+                placeholder="Department name (e.g. Engineering)"
+                autoFocus
+                className={inputClass}
+              />
+            )}
+
+            {/* Toggle — only admins can create new departments (others would get 403) */}
+            {step === 2 && isAdmin && (
+              <button
+                type="button"
+                onClick={() => { setCreatingNew((v) => !v); setError(null); }}
+                className="interactive text-left font-sans text-[12px] text-muted hover:text-primary"
+              >
+                {creatingNew ? "← Choose existing department" : "or create a new department"}
+              </button>
+            )}
           </div>
 
           {/* Primary action */}
@@ -235,14 +248,14 @@ export default function LoginPage() {
           >
             {loading
               ? step === 2
-                ? isCreatingDept
+                ? creatingNew
                   ? "Creating department…"
                   : "Joining…"
                 : isSignup
                   ? "Creating account…"
                   : "Signing in…"
               : step === 2
-                ? isCreatingDept
+                ? creatingNew
                   ? "Create department"
                   : "Join department"
                 : isSignup

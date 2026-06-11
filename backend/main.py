@@ -7,15 +7,41 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import func, select
 
 from config import get_settings, validate_settings
-from database import create_tables
+from database import create_tables, get_session
+from models.user import Department
 from qdrant import create_collection
 
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
 VERSION = "0.1.0"  # single source of truth for the app + /health version
+
+_DEFAULT_DEPARTMENTS = [
+    "Human Resources",
+    "Information Technology",
+    "Finance",
+    "Engineering",
+    "Executive",
+    "Operations",
+    "Legal",
+    "Marketing",
+]
+
+
+async def seed_departments() -> None:
+    # Idempotent: only seeds when the departments table is completely empty.
+    # Uses get_session() (not the FastAPI get_db dependency) since we're outside
+    # a request context during startup.
+    async with get_session() as db:
+        count = await db.scalar(select(func.count(Department.id)))
+        if count and count > 0:
+            return
+        for name in _DEFAULT_DEPARTMENTS:
+            db.add(Department(name=name))
+        # commit happens automatically when the context manager exits cleanly
 
 
 @asynccontextmanager
@@ -27,7 +53,9 @@ async def lifespan(app: FastAPI):
     # 2. Create tables if missing. Idempotent (checkfirst=True). Dev-only —
     #    production manages schema with Alembic migrations.
     await create_tables()
-    # 3. Ensure the Qdrant collection exists before the first request arrives.
+    # 3. Seed the 8 default departments on first boot (skipped if table is non-empty).
+    await seed_departments()
+    # 4. Ensure the Qdrant collection exists before the first request arrives.
     #    Idempotent — skips silently if it already exists.
     await create_collection()
     logger.info("Pragya API started")
