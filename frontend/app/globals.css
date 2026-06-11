@@ -161,6 +161,21 @@ body {
   animation: blink 1s steps(2, jump-none) infinite;
 }
 
+/* Streaming "thinking" dots (components/chat/StreamingDots): three amber dots
+   pulsing in sequence via staggered animation-delay set inline per dot. */
+@keyframes dot-pulse {
+  0%, 70%, 100% {
+    opacity: 0.25;
+  }
+  35% {
+    opacity: 1;
+  }
+}
+
+.streaming-dot {
+  animation: dot-pulse 1.2s ease-in-out infinite;
+}
+
 /* Interactive controls: hover/active feedback ≤.2s (§6). Declares its own
    transition so it overrides the global .45s crossfade on these elements. */
 .interactive {
@@ -204,6 +219,10 @@ body {
   }
   .terminal-cursor {
     animation: none;
+  }
+  .streaming-dot {
+    animation: none;
+    opacity: 0.55;
   }
   .interactive {
     transition: none;

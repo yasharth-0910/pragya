@@ -23,12 +23,30 @@ export interface User {
   created_at: string;
 }
 
-/** Department → models/user.py:Department (departments table). No response schema
- *  exposes this yet; shape mirrors the ORM columns for when an admin endpoint does. */
+/** Department → schemas/department.py:DepartmentResponse. */
 export interface Department {
   id: string;
   name: string;
   description: string | null;
+  created_at: string;
+}
+
+/** Department with member count → schemas/department.py:DepartmentWithCountResponse.
+ *  Only returned by the admin dashboard endpoint GET /admin/departments. */
+export interface DepartmentWithCount extends Department {
+  user_count: number;
+}
+
+/** User as seen by admin → schemas/department.py:UserAdminResponse.
+ *  Includes department_name (a resolved join, not stored on the user row). */
+export interface UserAdmin {
+  id: string;
+  name: string;
+  email: string;
+  department_id: string | null;
+  department_name: string | null;
+  role: string;
+  is_active: boolean;
   created_at: string;
 }
 

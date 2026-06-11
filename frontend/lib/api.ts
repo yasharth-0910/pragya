@@ -12,12 +12,15 @@ import { clearToken, getToken } from "@/lib/auth";
 import type {
   ChatSession,
   ChatMessage,
+  Department,
+  DepartmentWithCount,
   Document,
   DocumentStatus,
   DocumentUploadResponse,
   IntelligenceResponse,
   TokenResponse,
   User,
+  UserAdmin,
 } from "@/types";
 
 // Base URL from env, with a localhost default for dev (CLAUDE.md: backend on :8000).
@@ -243,6 +246,65 @@ export async function getSessionMessages(sessionId: string): Promise<ChatMessage
     headers: authHeaders(),
   });
   return handle<ChatMessage[]>(res);
+}
+
+// ── Departments ───────────────────────────────────────────────────────────────
+
+/** GET /departments — list all departments (any authenticated user). */
+export async function getDepartments(): Promise<Department[]> {
+  const res = await fetch(`${API_URL}/departments`, { headers: authHeaders() });
+  return handle<Department[]>(res);
+}
+
+/** POST /departments — create a department. Allowed when table is empty (bootstrap)
+ *  or by admins. */
+export async function createDepartment(
+  name: string,
+  description?: string
+): Promise<Department> {
+  const res = await fetch(`${API_URL}/departments`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ name, description: description ?? null }),
+  });
+  return handle<Department>(res);
+}
+
+/** PATCH /auth/me — self-assign to a department; returns a fresh token. */
+export async function updateMe(patch: {
+  department_id: string;
+  role?: string;
+}): Promise<TokenResponse> {
+  const res = await fetch(`${API_URL}/auth/me`, {
+    method: "PATCH",
+    headers: authHeaders(),
+    body: JSON.stringify(patch),
+  });
+  return handle<TokenResponse>(res);
+}
+
+// ── Admin ──────────────────────────────────────────────────────────────────────
+
+/** GET /admin/users — all users with dept info (admin only). */
+export async function getAdminUsers(): Promise<UserAdmin[]> {
+  const res = await fetch(`${API_URL}/admin/users`, { headers: authHeaders() });
+  return handle<UserAdmin[]>(res);
+}
+
+/** GET /admin/departments — all departments with member counts (admin only). */
+export async function getAdminDepartments(): Promise<DepartmentWithCount[]> {
+  const res = await fetch(`${API_URL}/admin/departments`, { headers: authHeaders() });
+  return handle<DepartmentWithCount[]>(res);
+}
+
+/** PATCH /admin/users/{userId}/role — change a user's role (admin only). */
+export async function updateUserRole(userId: string, role: string): Promise<UserAdmin> {
+  const res = await fetch(`${API_URL}/admin/users/${userId}/role`, {
+    method: "PATCH",
+    headers: authHeaders(),
+    body: JSON.stringify({ role }),
+  });
+  return handle<UserAdmin>(res);
 }
 
 // ── Document intelligence ──────────────────────────────────────────────────────

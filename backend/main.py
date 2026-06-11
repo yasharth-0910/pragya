@@ -73,14 +73,16 @@ async def health() -> dict[str, str]:
 # ── Routers (added per session as modules are built) ──────────────────────────
 # Uncomment each router as its session is completed. Do NOT import routers that
 # don't exist yet — that raises ImportError on startup and blocks all dev.
-from routers import auth, chat, documents
+from routers import admin, auth, chat, departments, documents, intelligence
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
+app.include_router(departments.router, prefix="/departments", tags=["departments"])
+app.include_router(admin.router, prefix="/admin", tags=["admin"])
 app.include_router(documents.router, prefix="/documents", tags=["documents"])
 # Session 5B: chat (retrieval + generation, SSE streaming) wired below.
 app.include_router(chat.router, prefix="/chat", tags=["chat"])
-# from routers import intelligence
-# app.include_router(intelligence.router, prefix="/intelligence", tags=["intelligence"])
+# Session 6: document intelligence (summary / key points / action items).
+app.include_router(intelligence.router, prefix="/intelligence", tags=["intelligence"])
 
 
 if __name__ == "__main__":

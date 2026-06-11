@@ -58,6 +58,12 @@ class Document(Base):
     key_points = Column(JSONB, nullable=True)
     # Action items as a JSON list of {text, owner, deadline} dicts.
     action_items = Column(JSONB, nullable=True)
+    # Coarse document class the intelligence service infers from the text:
+    # policy / meeting_notes / technical / other. Short string, nullable until generated.
+    document_type = Column(String(20), nullable=True)
+    # Word count of the reconstructed document text; populated by the intelligence
+    # service (computed in Python, not trusted from the LLM). Nullable until generated.
+    word_count = Column(Integer, nullable=True)
     # Failure detail — populated only when status becomes "failed".
     error_message = Column(Text, nullable=True)
     # Row creation timestamp.
