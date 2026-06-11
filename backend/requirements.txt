@@ -20,6 +20,8 @@ python-dotenv~=1.0          # loads the .env file into the environment
 # ── Auth (JWT + bcrypt, no OAuth) ─────────────────────────────────────────
 python-jose[cryptography]~=3.3   # JWT encode/decode; [cryptography] = the signing backend
 passlib[bcrypt]~=1.7             # password hashing; [bcrypt] = the hashing algorithm
+bcrypt==4.0.1                    # PINNED: passlib 1.7.4 crashes on bcrypt>=4.1 (it reads the removed bcrypt.__about__.__version__). 4.0.1 is the last compatible release.
+email-validator~=2.2             # required by pydantic EmailStr to validate email addresses
 
 # ── Vector DB ─────────────────────────────────────────────────────────────
 qdrant-client~=1.12         # Qdrant client (dense + sparse hybrid search)
