@@ -5,13 +5,20 @@ vector-DB access filter (CLAUDE.md §6), so it is the backbone of access control
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from models import Base
+
+
+def _utcnow() -> datetime:
+    # Timezone-aware UTC timestamp. Replaces _utcnow (deprecated in 3.12+),
+    # which returned a *naive* datetime. Passed as a callable so it's evaluated at
+    # each insert/update, not once at import time.
+    return datetime.now(timezone.utc)
 
 
 class Department(Base):
@@ -26,7 +33,7 @@ class Department(Base):
     # Optional longer blurb describing the department; shown in admin UI.
     description = Column(String(500), nullable=True)
     # When the row was created. Python-side default at insert time.
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
 
 class User(Base):
@@ -54,10 +61,10 @@ class User(Base):
     # their documents/queries keep their author reference.
     is_active = Column(Boolean, nullable=False, default=True)
     # Row creation timestamp.
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
     # Last-modified timestamp; refreshed on every update via onupdate.
     updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
     )
 
     # Many-to-one: each User links to its Department. Lets `user.department`
