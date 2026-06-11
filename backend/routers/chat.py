@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select
+from sqlalchemy import delete as sa_delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db, get_session
@@ -330,11 +330,20 @@ async def list_sessions(
         .group_by(ChatMessage.session_id)
         .subquery()
     )
+    # Correlated subquery: first user message content per session (for list card preview).
+    preview_subq = (
+        select(ChatMessage.content)
+        .where(ChatMessage.session_id == ChatSession.id)
+        .where(ChatMessage.role == "user")
+        .order_by(ChatMessage.created_at.asc())
+        .limit(1)
+        .scalar_subquery()
+    )
     result = await db.execute(
-        select(ChatSession, counts.c.cnt)
+        select(ChatSession, counts.c.cnt, preview_subq.label("preview"))
         .outerjoin(counts, ChatSession.id == counts.c.sid)
         .where(ChatSession.user_id == current_user.id)
-        .order_by(ChatSession.updated_at.desc())  # most recently active first
+        .order_by(ChatSession.updated_at.desc())
     )
     return [
         ChatSessionResponse(
@@ -343,9 +352,29 @@ async def list_sessions(
             created_at=sess.created_at,
             updated_at=sess.updated_at,
             message_count=cnt or 0,
+            preview=preview[:100] if preview else None,
         )
-        for sess, cnt in result.all()
+        for sess, cnt, preview in result.all()
     ]
+
+
+@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_session(
+    session_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Delete a session and all its messages. QueryLogs are preserved (SET NULL)."""
+    session = await db.get(ChatSession, session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    if session.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this session")
+    # Use direct SQL deletes to avoid async lazy-load issues; DB-level FK cascade
+    # handles anything we miss (ChatMessage CASCADE, QueryLog SET NULL).
+    await db.execute(sa_delete(ChatMessage).where(ChatMessage.session_id == session_id))
+    await db.execute(sa_delete(ChatSession).where(ChatSession.id == session_id))
+    await db.commit()
 
 
 @router.get("/sessions/{session_id}/messages", response_model=list[ChatMessageResponse])

@@ -89,6 +89,7 @@ function ChatInner() {
 
   const [messages, setMessages] = useState<UIMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(searchParams.get("session"));
+  const [sessionTitle, setSessionTitle] = useState<string | null>(null);
   const [streaming, setStreaming] = useState(false);
   const [docCount, setDocCount] = useState<number | null>(null);
   const [deptName, setDeptName] = useState<string | null>(null);
@@ -135,6 +136,7 @@ function ChatInner() {
     setSessionId(sid);
     if (!sid) {
       setMessages([]);
+      setSessionTitle(null);
       return;
     }
     let cancelled = false;
@@ -154,6 +156,14 @@ function ChatInner() {
       .catch(() => {
         if (!cancelled) setMessages([]);
       });
+    // Fetch session title from sessions list
+    getSessions()
+      .then((sessions) => {
+        if (cancelled) return;
+        const s = sessions.find((s) => s.id === sid);
+        setSessionTitle(s?.title ?? null);
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -228,7 +238,7 @@ function ChatInner() {
       {/* Topbar */}
       <header className="flex items-center justify-between border-b border-border px-6 py-4">
         <h1 className="font-serif text-[18px] tracking-[-0.01em] text-primary">
-          Ask your knowledge base
+          {sessionTitle ?? "Ask your knowledge base"}
         </h1>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
@@ -280,7 +290,7 @@ function ChatInner() {
                 /* User bubble */
                 <div key={m.id}>
                   <div className="flex justify-end">
-                    <div className="max-w-[75%] whitespace-pre-wrap rounded-[14px] rounded-br-[3px] bg-ink-2 px-4 py-2.5 font-sans text-[14px] leading-[1.6] text-paper">
+                    <div className="max-w-[75%] break-words whitespace-pre-wrap rounded-[14px] rounded-br-[3px] bg-ink-2 px-4 py-2.5 font-sans text-[14px] leading-[1.6] text-paper">
                       {m.content}
                     </div>
                   </div>
@@ -293,7 +303,7 @@ function ChatInner() {
                 /* Error bubble — amber left border (Fix 4d) */
                 <div key={m.id} className="flex justify-start">
                   <div>
-                    <div className="max-w-[85%] rounded-[8px] border border-border border-l-[3px] border-l-accent bg-card px-4 py-3 font-sans text-[13px] leading-[1.6] text-primary">
+                    <div className="max-w-[85%] break-words rounded-[8px] border border-border border-l-[3px] border-l-accent bg-card px-4 py-3 font-sans text-[13px] leading-[1.6] text-primary">
                       {m.error}
                     </div>
                     <div className="mt-0.5 font-mono text-[10px] text-muted">

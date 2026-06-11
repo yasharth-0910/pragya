@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
 from database import get_db
-from middleware.rbac import get_current_user
+from middleware.rbac import get_current_user, require_admin
 from models.document import Document
 from models.user import User
 from schemas.document import (
@@ -36,7 +36,7 @@ from schemas.document import (
     DocumentStatusResponse,
     DocumentUploadResponse,
 )
-from services.ingestion_service import process_document
+from services.ingestion_service import process_document, reindex_document
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +162,40 @@ async def list_documents(
     result = await db.execute(query)
     documents = result.scalars().all()
     return [DocumentResponse.model_validate(doc) for doc in documents]
+
+
+@router.post("/reindex-all", status_code=status.HTTP_202_ACCEPTED)
+async def reindex_all_documents(
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Re-index every ready document with dense+sparse vectors. Admin only; async."""
+    result = await db.execute(select(Document).where(Document.status == "ready"))
+    documents = result.scalars().all()
+    for doc in documents:
+        background_tasks.add_task(reindex_document, doc.id, doc.department_id, doc.filename)
+    logger.info("Reindex-all: scheduling %d documents", len(documents))
+    return {"message": f"Reindexing {len(documents)} documents in background"}
+
+
+@router.post("/{document_id}/reindex")
+async def reindex_one_document(
+    document_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Re-index a single document with dense+sparse vectors."""
+    document = await db.get(Document, document_id)
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    if document.department_id != current_user.department_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    if document.status != "ready":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Document is not ready for reindexing")
+    chunk_count = await reindex_document(document_id, document.department_id, document.filename)
+    logger.info("Reindexed doc=%s chunks=%d", document_id, chunk_count)
+    return {"chunk_count": chunk_count}
 
 
 @router.get("/{document_id}/status", response_model=DocumentStatusResponse)

@@ -151,6 +151,7 @@ export interface ChatSession {
   created_at: string;
   updated_at: string;
   message_count: number;
+  preview: string | null; // first 100 chars of first user message
 }
 
 /** Body of POST /chat/query → schemas/chat.py:ChatRequest.

@@ -77,3 +77,5 @@ class ChatSessionResponse(BaseModel):
     # Defaults to 0 so a freshly created, empty session serializes cleanly; the
     # sessions endpoint fills this in with a COUNT per session.
     message_count: int = Field(default=0, description="Number of messages in the session.")
+    # First 100 chars of the first user message — for the conversations list card.
+    preview: str | None = Field(default=None, description="Snippet of the first user message.")

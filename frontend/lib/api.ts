@@ -240,6 +240,15 @@ export async function getSessions(): Promise<ChatSession[]> {
   return handle<ChatSession[]>(res);
 }
 
+/** DELETE /chat/sessions/{id} — permanently delete a session and its messages. */
+export async function deleteSession(sessionId: string): Promise<void> {
+  const res = await fetch(`${API_URL}/chat/sessions/${sessionId}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  await handle<void>(res);
+}
+
 /** GET /chat/sessions/{session_id}/messages — full transcript, oldest first. */
 export async function getSessionMessages(sessionId: string): Promise<ChatMessage[]> {
   const res = await fetch(`${API_URL}/chat/sessions/${sessionId}/messages`, {

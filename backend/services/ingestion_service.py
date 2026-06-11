@@ -29,7 +29,8 @@ import fitz  # PyMuPDF — keeps page numbers, which our citations depend on.
 import google.generativeai as genai
 from docx import Document as DocxDocument
 from pptx import Presentation
-from qdrant_client.models import PointStruct
+from qdrant_client.models import PointStruct, SparseVector
+from sqlalchemy import select
 
 from config import get_settings
 from database import get_session
@@ -285,8 +286,43 @@ async def embed_chunks(texts: list[str]) -> list[list[float]]:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Function 7: upsert chunks + vectors into Qdrant
+# Function 7: sparse vector builder + upsert helpers
 # ──────────────────────────────────────────────────────────────────────────────
+def build_sparse_vector(text: str) -> SparseVector:
+    """Build a BM25-approximate sparse vector (TF-weighted, hash-indexed).
+
+    Index = abs(hash(word)) % 100_000; value = term frequency. Hash collisions
+    (two words sharing an index) sum their TF — rare enough not to matter.
+    This is a good-enough approximation for the research comparison in CLAUDE.md §10;
+    production would use SPLADE or a learned sparse encoder.
+    """
+    tokens = re.sub(r"[^a-z0-9\s]", " ", text.lower()).split()
+    if not tokens:
+        return SparseVector(indices=[], values=[])
+    total = len(tokens)
+    counts: dict[str, int] = {}
+    for tok in tokens:
+        counts[tok] = counts.get(tok, 0) + 1
+    index_values: dict[int, float] = {}
+    for word, count in counts.items():
+        idx = abs(hash(word)) % 100_000
+        index_values[idx] = index_values.get(idx, 0.0) + count / total
+    indices = list(index_values.keys())
+    values = [index_values[i] for i in indices]
+    return SparseVector(indices=indices, values=values)
+
+
+def _batch_upsert_points(points: list[PointStruct]) -> None:
+    """Sync helper: upsert Qdrant points in batches of 50."""
+    settings = get_settings()
+    client = get_qdrant_client()
+    for start in range(0, len(points), 50):
+        client.upsert(
+            collection_name=settings.QDRANT_COLLECTION,
+            points=points[start : start + 50],
+        )
+
+
 def upsert_to_qdrant(
     chunks: list[dict],
     embeddings: list[list[float]],
@@ -294,31 +330,21 @@ def upsert_to_qdrant(
     department_id: uuid.UUID,
     filename: str,
 ) -> list[str]:
-    """Upsert one Qdrant point per chunk; return the point ids (chunk-aligned).
-
-    Only the dense vector is set here. The sparse/BM25 vector is added in the RAG
-    session — documents ingested now will need re-indexing then. That's an
-    intended deferral for this session, not an oversight.
-    """
-    settings = get_settings()
-    client = get_qdrant_client()
-
+    """Upsert one Qdrant point per chunk (dense + sparse); return the point ids."""
     points: list[PointStruct] = []
     point_ids: list[str] = []
     for chunk, embedding in zip(chunks, embeddings):
-        # A fresh UUID per point; we store this id on the DocumentChunk row so the
-        # vector can be deleted/updated if the document is later removed.
         point_id = str(uuid.uuid4())
         point_ids.append(point_id)
         points.append(
             PointStruct(
                 id=point_id,
-                # Named "dense" — must match the collection's named-vector config.
-                vector={"dense": embedding},
+                vector={
+                    "dense": embedding,
+                    "sparse": build_sparse_vector(chunk["child_text"]),
+                },
                 payload={
                     "document_id": str(document_id),
-                    # department_id in the payload is exactly what the RBAC filter
-                    # matches against at query time — the access boundary.
                     "department_id": str(department_id),
                     "chunk_index": chunk["chunk_index"],
                     "parent_text": chunk["parent_text"],
@@ -327,16 +353,58 @@ def upsert_to_qdrant(
                 },
             )
         )
+    _batch_upsert_points(points)
+    return point_ids
 
-    # Upsert in batches of 50 so a large document doesn't push one oversized
-    # request at Qdrant.
-    for start in range(0, len(points), 50):
-        client.upsert(
-            collection_name=settings.QDRANT_COLLECTION,
-            points=points[start : start + 50],
+
+async def reindex_document(
+    document_id: uuid.UUID,
+    department_id: uuid.UUID,
+    filename: str,
+) -> int:
+    """Re-embed all chunks and upsert with dense+sparse vectors.
+
+    Uses existing qdrant_point_ids from DocumentChunk rows so the upsert
+    updates in-place rather than creating duplicate points.
+    Returns the number of chunks re-indexed.
+    """
+    async with get_session() as db:
+        result = await db.execute(
+            select(DocumentChunk)
+            .where(DocumentChunk.document_id == document_id)
+            .order_by(DocumentChunk.chunk_index)
+        )
+        chunks = result.scalars().all()
+
+    if not chunks:
+        return 0
+
+    child_texts = [c.child_text for c in chunks]
+    embeddings = await embed_chunks(child_texts)
+
+    points: list[PointStruct] = []
+    for chunk, embedding in zip(chunks, embeddings):
+        point_id = chunk.qdrant_point_id or str(uuid.uuid4())
+        points.append(
+            PointStruct(
+                id=point_id,
+                vector={
+                    "dense": embedding,
+                    "sparse": build_sparse_vector(chunk.child_text),
+                },
+                payload={
+                    "document_id": str(document_id),
+                    "department_id": str(department_id),
+                    "chunk_index": chunk.chunk_index,
+                    "parent_text": chunk.parent_text,
+                    "source_filename": filename,
+                    "page_number": chunk.page_number,
+                },
+            )
         )
 
-    return point_ids
+    await asyncio.to_thread(_batch_upsert_points, points)
+    return len(points)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
