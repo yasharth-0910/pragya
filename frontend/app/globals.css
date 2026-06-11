@@ -84,6 +84,12 @@
   --color-paper: var(--paper);
 }
 
+/* Smooth scroll for in-page anchors (nav → #how-it-works / #security).
+   Disabled under reduced motion below. */
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
   background-color: var(--bg-main);
@@ -109,22 +115,22 @@ body {
 }
 
 /* ── Motion — DESIGN.md §6 ─────────────────────────────────────────────────
-   Page-load rise: opacity 0 + translateY(14px) → settled, .7s. Stagger is set
-   per element via inline animation-delay (~120ms steps) in the components. */
-@keyframes rise {
-  from {
-    opacity: 0;
-    transform: translateY(14px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+   Scroll-triggered reveal (driven by components/landing/Reveal.tsx): hidden +
+   14px low until IntersectionObserver adds .is-revealed at 15% visibility,
+   then rises over .7s. --reveal-delay staggers siblings (~120ms steps).
+   This element declares its own `transition`, so don't put themed
+   backgrounds/borders on it (they'd lose the .45s theme crossfade above). */
+.reveal {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.7s cubic-bezier(0.22, 0.61, 0.36, 1),
+    transform 0.7s cubic-bezier(0.22, 0.61, 0.36, 1);
+  transition-delay: var(--reveal-delay, 0ms);
 }
 
-.rise {
-  opacity: 0;
-  animation: rise 0.7s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+.reveal.is-revealed {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 /* Terminal response fade-in (.5s) after the query finishes typing. */
@@ -182,11 +188,19 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .rise,
+  html {
+    scroll-behavior: auto;
+  }
+  /* CSS fallback for the reveal (Reveal.tsx also short-circuits in JS):
+     show the settled state immediately. */
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
   .fade-in {
     animation: none;
     opacity: 1;
-    transform: none;
   }
   .terminal-cursor {
     animation: none;

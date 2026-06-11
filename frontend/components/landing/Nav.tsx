@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
+import Reveal from "./Reveal";
 
 // Hand-drawn moon/sun so we don't pull an icon library (DESIGN.md §6: no libs).
 function MoonIcon() {
@@ -54,34 +55,38 @@ function ThemeToggle() {
 
 export default function Nav() {
   return (
-    <nav className="rise flex items-center justify-between">
-      <a href="#" className="font-serif text-[22px] tracking-[-0.02em] text-primary">
-        Pragya
-      </a>
-
-      <div className="flex items-center gap-5 sm:gap-7">
-        <a
-          href="#how-it-works"
-          className="interactive hidden font-sans text-[14px] text-muted hover:text-primary sm:inline"
-        >
-          How it works
-        </a>
-        <a
-          href="#security"
-          className="interactive hidden font-sans text-[14px] text-muted hover:text-primary sm:inline"
-        >
-          Security
+    // Nav sits at the top so its Reveal fires immediately on load — same
+    // entrance as before, now consistent with the scroll-reveal system.
+    <Reveal>
+      <nav className="flex items-center justify-between">
+        <a href="#" className="font-serif text-[22px] tracking-[-0.02em] text-primary">
+          Pragya
         </a>
 
-        <ThemeToggle />
+        <div className="flex items-center gap-5 sm:gap-7">
+          <a
+            href="#how-it-works"
+            className="interactive hidden font-sans text-[14px] text-muted hover:text-primary sm:inline"
+          >
+            How it works
+          </a>
+          <a
+            href="#security"
+            className="interactive hidden font-sans text-[14px] text-muted hover:text-primary sm:inline"
+          >
+            Security
+          </a>
 
-        <a
-          href="#"
-          className="interactive rounded-full border border-input px-5 py-2 font-sans text-[14px] text-primary hover:bg-subtle active:scale-[0.98]"
-        >
-          Sign in
-        </a>
-      </div>
-    </nav>
+          <ThemeToggle />
+
+          <a
+            href="#"
+            className="interactive rounded-full border border-input px-5 py-2 font-sans text-[14px] text-primary hover:bg-subtle active:scale-[0.98]"
+          >
+            Sign in
+          </a>
+        </div>
+      </nav>
+    </Reveal>
   );
 }
