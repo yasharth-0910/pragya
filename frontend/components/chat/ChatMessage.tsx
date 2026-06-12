@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
@@ -87,6 +87,36 @@ export function stripMarkdown(md: string): string {
 const InsideCodeBlock = createContext(false);
 const InsideOrderedList = createContext(false);
 
+/* ── List/code renderers ──────────────────────────────────────────────────────
+   These read a context, so they must call a hook. Defined as real (uppercase)
+   components — not inline arrows on the components map — so the call satisfies the
+   Rules of Hooks linter; react-markdown still invokes them as components. */
+
+function ListItem({ children }: { children?: ReactNode }) {
+  const isOrdered = useContext(InsideOrderedList);
+  return isOrdered ? (
+    <li className="pl-1 leading-[1.7]">{children}</li>
+  ) : (
+    // 5px amber dot, absolutely positioned left of the text
+    <li className="relative pl-4 leading-[1.7] before:absolute before:left-0 before:top-[0.55em] before:h-[5px] before:w-[5px] before:rounded-full before:bg-accent before:content-['']">
+      {children}
+    </li>
+  );
+}
+
+function CodeSpan({ children }: { children?: ReactNode }) {
+  const isBlock = useContext(InsideCodeBlock);
+  return isBlock ? (
+    // Inside <pre> — pre already handles bg/text-color; just enforce mono
+    <code className="font-mono text-[12px]">{children}</code>
+  ) : (
+    // Inline code chip
+    <code className="rounded px-[3px] py-[1px] font-mono text-[12px] bg-chip text-primary">
+      {children}
+    </code>
+  );
+}
+
 /* ── ReactMarkdown component overrides (DESIGN.md tokens) ────────────────────── */
 
 const mdComponents: Components = {
@@ -105,18 +135,7 @@ const mdComponents: Components = {
       <ol className="my-1.5 ml-4 list-decimal space-y-0.5">{children}</ol>
     </InsideOrderedList.Provider>
   ),
-  // eslint-disable-next-line react-hooks/rules-of-hooks -- called as React component by react-markdown
-  li: ({ children }) => {
-    const isOrdered = useContext(InsideOrderedList);
-    return isOrdered ? (
-      <li className="pl-1 leading-[1.7]">{children}</li>
-    ) : (
-      // 5px amber dot, absolutely positioned left of the text
-      <li className="relative pl-4 leading-[1.7] before:absolute before:left-0 before:top-[0.55em] before:h-[5px] before:w-[5px] before:rounded-full before:bg-accent before:content-['']">
-        {children}
-      </li>
-    );
-  },
+  li: ListItem,
   h1: ({ children }) => (
     <h1 className="mb-2 mt-3 font-serif text-[17px] tracking-[-0.01em] text-primary first:mt-0">{children}</h1>
   ),
@@ -126,19 +145,7 @@ const mdComponents: Components = {
   h3: ({ children }) => (
     <h3 className="mb-1 mt-2 font-serif text-[13.5px] text-primary first:mt-0">{children}</h3>
   ),
-  // eslint-disable-next-line react-hooks/rules-of-hooks -- called as React component by react-markdown
-  code: ({ children }) => {
-    const isBlock = useContext(InsideCodeBlock);
-    return isBlock ? (
-      // Inside <pre> — pre already handles bg/text-color; just enforce mono
-      <code className="font-mono text-[12px]">{children}</code>
-    ) : (
-      // Inline code chip
-      <code className="rounded px-[3px] py-[1px] font-mono text-[12px] bg-chip text-primary">
-        {children}
-      </code>
-    );
-  },
+  code: CodeSpan,
   pre: ({ children }) => (
     // Wrap children in a context so nested `code` skips its inline-chip style
     <InsideCodeBlock.Provider value={true}>

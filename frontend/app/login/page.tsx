@@ -121,7 +121,9 @@ export default function LoginPage() {
   }
 
   function onKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Enter") step === 1 ? handleStep1() : handleStep2();
+    if (e.key !== "Enter") return;
+    if (step === 1) handleStep1();
+    else handleStep2();
   }
 
   const inputClass =
