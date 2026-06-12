@@ -20,6 +20,7 @@ from database import get_db
 from middleware.rbac import get_current_user
 from models.document import Document
 from models.user import User
+from routers.documents import can_access_document
 from schemas.intelligence import IntelligenceResponse
 from services.intelligence_service import run_intelligence
 
@@ -58,7 +59,9 @@ async def _load_authorized_document(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Document not found",
         )
-    if document.department_id != current_user.department_id:
+    # Visibility-aware access (company / department / personal) — personal docs are
+    # never visible to anyone but their uploader, including via intelligence.
+    if not can_access_document(document, current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have access to this document",

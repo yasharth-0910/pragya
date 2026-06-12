@@ -329,8 +329,15 @@ def upsert_to_qdrant(
     document_id: uuid.UUID,
     department_id: uuid.UUID,
     filename: str,
+    visibility: str,
+    uploaded_by: uuid.UUID,
 ) -> list[str]:
-    """Upsert one Qdrant point per chunk (dense + sparse); return the point ids."""
+    """Upsert one Qdrant point per chunk (dense + sparse); return the point ids.
+
+    visibility + uploaded_by are written into EVERY point's payload so the
+    3-tier visibility filter (build_visibility_filter) can enforce access at
+    query time without any DB round-trip (CLAUDE.md §6).
+    """
     points: list[PointStruct] = []
     point_ids: list[str] = []
     for chunk, embedding in zip(chunks, embeddings):
@@ -346,6 +353,8 @@ def upsert_to_qdrant(
                 payload={
                     "document_id": str(document_id),
                     "department_id": str(department_id),
+                    "visibility": visibility,
+                    "uploaded_by": str(uploaded_by),
                     "chunk_index": chunk["chunk_index"],
                     "parent_text": chunk["parent_text"],
                     "source_filename": filename,
@@ -361,11 +370,15 @@ async def reindex_document(
     document_id: uuid.UUID,
     department_id: uuid.UUID,
     filename: str,
+    visibility: str,
+    uploaded_by: uuid.UUID,
 ) -> int:
     """Re-embed all chunks and upsert with dense+sparse vectors.
 
     Uses existing qdrant_point_ids from DocumentChunk rows so the upsert
-    updates in-place rather than creating duplicate points.
+    updates in-place rather than creating duplicate points. Re-writes the
+    visibility + uploaded_by payload so reindex also backfills these fields on
+    documents ingested before the 3-tier model existed.
     Returns the number of chunks re-indexed.
     """
     async with get_session() as db:
@@ -395,6 +408,8 @@ async def reindex_document(
                 payload={
                     "document_id": str(document_id),
                     "department_id": str(department_id),
+                    "visibility": visibility,
+                    "uploaded_by": str(uploaded_by),
                     "chunk_index": chunk.chunk_index,
                     "parent_text": chunk.parent_text,
                     "source_filename": filename,
@@ -416,6 +431,8 @@ async def process_document(
     original_filename: str,
     document_id: uuid.UUID,
     department_id: uuid.UUID,
+    visibility: str,
+    uploaded_by: uuid.UUID,
 ) -> None:
     """Run the full pipeline for one uploaded document, in the background.
 
@@ -451,7 +468,14 @@ async def process_document(
         # 4. Upsert vectors + payload to Qdrant. The client is sync, so run it in
         #    a thread to keep the event loop free.
         point_ids = await asyncio.to_thread(
-            upsert_to_qdrant, chunks, embeddings, document_id, department_id, filename
+            upsert_to_qdrant,
+            chunks,
+            embeddings,
+            document_id,
+            department_id,
+            filename,
+            visibility,
+            uploaded_by,
         )
         logger.info("Upserted %d point(s) to Qdrant", len(point_ids))
 

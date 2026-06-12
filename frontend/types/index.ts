@@ -78,6 +78,7 @@ export interface Document {
   original_filename: string;
   department_id: string;
   uploaded_by: string;
+  visibility: string; // "company" | "department" | "personal"
   status: string; // "processing" | "ready" | "failed"
   file_size: number | null;
   page_count: number | null; // null for DOCX

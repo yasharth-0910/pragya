@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import Link from "next/link";
 import { getDocumentStatus } from "@/lib/api";
 import type { Document } from "@/types";
@@ -19,6 +19,52 @@ function FileGlyph() {
       />
       <path d="M14 3v4h4" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
     </svg>
+  );
+}
+
+// Visibility icons — small, monochrome (DESIGN.md §8: no emoji in UI).
+function GlobeIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />
+      <path d="M3 12h18M12 3c2.5 2.5 2.5 15 0 18M12 3c-2.5 2.5-2.5 15 0 18" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  );
+}
+function BuildingIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M5 21V5a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v16M15 9h3a1 1 0 0 1 1 1v11M3 21h18" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function LockIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="5" y="11" width="14" height="9" rx="1.5" stroke="currentColor" strokeWidth="2" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+// Small visibility badge for the card's top-right. Personal is amber (the most
+// distinctive state — the user should notice a private doc); company/department
+// use the quiet chip colors.
+function VisibilityBadge({ visibility }: { visibility: string }) {
+  const config: Record<string, { label: string; icon: () => ReactElement; cls: string }> = {
+    company: { label: "Company", icon: GlobeIcon, cls: "bg-chip text-chip-text" },
+    department: { label: "Department", icon: BuildingIcon, cls: "bg-chip text-chip-text" },
+    personal: { label: "Personal", icon: LockIcon, cls: "bg-accent text-ink" },
+  };
+  const c = config[visibility] ?? config.department;
+  const Icon = c.icon;
+  return (
+    <span
+      className={`flex shrink-0 items-center gap-1 rounded-[4px] px-1.5 py-0.5 font-mono text-[10px] tracking-[0.04em] ${c.cls}`}
+    >
+      <Icon />
+      {c.label}
+    </span>
   );
 }
 
@@ -84,6 +130,10 @@ export default function DocumentCard({ doc }: DocumentCardProps) {
                 Intelligence ready
               </span>
             )}
+            {/* Visibility badge — pinned to the card's top-right. */}
+            <span className="ml-auto pl-2">
+              <VisibilityBadge visibility={doc.visibility} />
+            </span>
           </div>
 
           {/* Meta line — chunk count + file size once known (Fix 5c) */}

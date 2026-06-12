@@ -41,6 +41,19 @@ class Document(Base):
     department_id = Column(
         UUID(as_uuid=True), ForeignKey("departments.id"), nullable=False
     )
+    # Controls who can see and query this document — the 3-tier visibility model:
+    #   "company"    — visible to ALL authenticated users (any department). Only
+    #                  admins may upload these.
+    #   "department" — visible only to users whose department_id matches this doc's
+    #                  department_id (the original single-level behavior; default).
+    #   "personal"   — visible ONLY to the uploader (uploaded_by == user.id). Nobody
+    #                  else, not even admins/HR — a hard privacy guarantee.
+    # server_default (not just the Python default) so the column can be added NOT
+    # NULL to a table that already has rows: Postgres backfills existing docs to
+    # "department" during the migration.
+    visibility = Column(
+        String(20), nullable=False, default="department", server_default="department"
+    )
     # The user who uploaded it (audit / "uploaded by" in UI). Required.
     uploaded_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     # Ingestion lifecycle: processing / ready / failed. Plain string (not enum) so

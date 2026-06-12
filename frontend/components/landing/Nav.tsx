@@ -80,7 +80,7 @@ export default function Nav() {
           <ThemeToggle />
 
           <a
-            href="#"
+            href="/login"
             className="interactive rounded-full border border-input px-5 py-2 font-sans text-[14px] text-primary hover:bg-subtle active:scale-[0.98]"
           >
             Sign in

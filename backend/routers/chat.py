@@ -196,8 +196,8 @@ async def chat_query(
     )
 
     # ── 3. Retrieve grounding chunks (full hybrid + rerank pipeline) ──
-    # retrieve() needs department_id as a str (Qdrant stored it stringified).
-    chunks = await retrieve(payload.query, str(department_id), method=CHAT_RETRIEVAL_METHOD)
+    # retrieve() builds the 3-tier visibility filter from current_user itself.
+    chunks = await retrieve(payload.query, current_user, method=CHAT_RETRIEVAL_METHOD)
 
     # Capture plain values for the generator closure — avoid touching the ORM
     # `current_user`/`session` objects inside the post-response generator.

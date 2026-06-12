@@ -74,6 +74,7 @@ class DocumentResponse(BaseModel):
     original_filename: str = Field(description="The exact filename the user uploaded.")
     department_id: uuid.UUID = Field(description="Owning department — the RBAC boundary.")
     uploaded_by: uuid.UUID = Field(description="UUID of the user who uploaded it.")
+    visibility: str = Field(description="Access tier: company / department / personal.")
     status: str = Field(description="Ingestion state: processing / ready / failed.")
     # Nullable until known.
     file_size: int | None = Field(default=None, description="Original file size in bytes.")

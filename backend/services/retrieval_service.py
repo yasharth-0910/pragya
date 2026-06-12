@@ -36,7 +36,7 @@ from qdrant_client.models import SparseVector
 from sentence_transformers import CrossEncoder
 
 from config import get_settings
-from qdrant import build_department_filter, get_qdrant_client
+from qdrant import build_visibility_filter, get_qdrant_client
 
 logger = logging.getLogger(__name__)
 
@@ -117,15 +117,17 @@ def embed_query(query: str) -> list[float]:
 # ──────────────────────────────────────────────────────────────────────────────
 def dense_retrieve(
     query_vector: list[float],
-    department_id: str,
+    query_filter,
     client,
     top_k: int = 20,
 ) -> list[dict]:
     """Search the "dense" named vector by cosine similarity. Experiment A baseline.
 
-    The department filter is NOT optional. It is the RBAC boundary: an HR user must
-    never see IT documents, and that is enforced HERE, before any result is scored,
-    by build_department_filter(department_id) (CLAUDE.md §6).
+    The query_filter is NOT optional. It is the RBAC boundary (the 3-tier visibility
+    filter from build_visibility_filter): a user must never see documents they lack
+    access to, and that is enforced HERE, before any result is scored (CLAUDE.md §6).
+    The caller passes the prebuilt Filter so the exact same access rule is shared by
+    every retrieval path (chat + search).
 
     top_k=20 is deliberately generous: dense + sparse each contribute 20 candidates
     so RRF fusion downstream has a real pool to work with rather than a thin list.
@@ -136,7 +138,7 @@ def dense_retrieve(
         # `using` selects WHICH named vector to search — the collection has named
         # "dense" and "sparse" vectors, so this disambiguates.
         using="dense",
-        query_filter=build_department_filter(department_id),
+        query_filter=query_filter,
         limit=top_k,
         with_payload=True,
     )
@@ -155,7 +157,7 @@ def dense_retrieve(
 # ──────────────────────────────────────────────────────────────────────────────
 def sparse_retrieve(
     query: str,
-    department_id: str,
+    query_filter,
     client,
     top_k: int = 20,
 ) -> list[dict]:
@@ -201,7 +203,7 @@ def sparse_retrieve(
         # sparse vector as the search target.
         query=SparseVector(indices=indices, values=values),
         using="sparse",
-        query_filter=build_department_filter(department_id),
+        query_filter=query_filter,
         limit=top_k,
         with_payload=True,
     )
@@ -313,7 +315,7 @@ def rerank(query: str, candidates: list[dict], top_n: int = 5) -> list[dict]:
 # ──────────────────────────────────────────────────────────────────────────────
 async def retrieve(
     query: str,
-    department_id: str,
+    current_user,
     method: str = "hybrid_rerank",
 ) -> list[dict]:
     """Run one of the three retrieval pipelines and return ranked result dicts.
@@ -324,9 +326,12 @@ async def retrieve(
       • "hybrid_rerank"  — embed → dense + sparse → RRF →      (Experiment C,
                             cross-encoder rerank.               the default)
 
-    department_id MUST be a str — Qdrant stored it as str(department_id) in the
-    payload, and MatchValue compares by exact type, so passing a uuid.UUID would
-    match zero points with no error. Callers pass str(current_user.department_id).
+    current_user (a User) drives the RBAC boundary: we build the 3-tier visibility
+    filter ONCE here from current_user.department_id + current_user.id and share it
+    across both dense and sparse retrieval, so company/department/personal access is
+    enforced identically in every branch. Both ids are stringified for the filter —
+    Qdrant stored them as strings and MatchValue compares by exact type, so a
+    uuid.UUID would match zero points with no error.
 
     Logs the method, result count, and elapsed milliseconds for every call — this
     timing feeds the latency column of the research comparison.
@@ -334,24 +339,29 @@ async def retrieve(
     start = time.perf_counter()
     client = get_qdrant_client()
 
+    # The single RBAC filter, built once and reused by both retrievers below.
+    query_filter = build_visibility_filter(
+        str(current_user.department_id), str(current_user.id)
+    )
+
     # embed_query is a blocking HTTP call; run it off the event loop so concurrent
     # requests aren't stalled while Gemini responds.
     query_vector = await asyncio.to_thread(embed_query, query)
 
     if method == "dense":
         # Experiment A — semantic baseline, no fusion, no rerank.
-        results = dense_retrieve(query_vector, department_id, client)
+        results = dense_retrieve(query_vector, query_filter, client)
 
     elif method == "hybrid":
         # Experiment B — fuse dense + sparse with RRF.
-        dense_results = dense_retrieve(query_vector, department_id, client)
-        sparse_results = sparse_retrieve(query, department_id, client)
+        dense_results = dense_retrieve(query_vector, query_filter, client)
+        sparse_results = sparse_retrieve(query, query_filter, client)
         results = rrf_fusion(dense_results, sparse_results)
 
     elif method == "hybrid_rerank":
         # Experiment C — full pipeline: fuse, then cross-encoder rerank to top 5.
-        dense_results = dense_retrieve(query_vector, department_id, client)
-        sparse_results = sparse_retrieve(query, department_id, client)
+        dense_results = dense_retrieve(query_vector, query_filter, client)
+        sparse_results = sparse_retrieve(query, query_filter, client)
         fused = rrf_fusion(dense_results, sparse_results)
         results = rerank(query, fused)
 

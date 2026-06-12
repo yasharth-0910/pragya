@@ -109,12 +109,15 @@ export async function getMe(): Promise<User> {
  *  "processing" until ingestion finishes, so poll getDocumentStatus(id). */
 export async function uploadDocument(
   file: File,
-  departmentId?: string
+  departmentId?: string,
+  visibility: string = "department"
 ): Promise<DocumentUploadResponse> {
   const form = new FormData();
   form.append("file", file);
   // Optional: server defaults to the uploader's own department when omitted.
   if (departmentId) form.append("department_id", departmentId);
+  // 3-tier access — server validates and enforces (e.g. only admins → "company").
+  form.append("visibility", visibility);
   const res = await fetch(`${API_URL}/documents/upload`, {
     method: "POST",
     headers: authHeaders(false), // let the browser set the multipart boundary
@@ -337,4 +340,143 @@ export async function getIntelligence(documentId: string): Promise<IntelligenceR
     headers: authHeaders(),
   });
   return handle<IntelligenceResponse>(res);
+}
+
+// ── Analytics (admin only) ────────────────────────────────────────────────────
+
+export interface AnalyticsOverview {
+  total_queries: number;
+  answered_queries: number;
+  unanswered_queries: number;
+  total_documents: number;
+  total_users: number;
+  total_departments: number;
+  avg_response_time_ms: number | null;
+  avg_faithfulness: number | null;
+}
+
+export interface TopQuery {
+  query_preview: string;
+  count: number;
+  last_asked: string;
+}
+
+export interface UnansweredQuery {
+  query_text: string;
+  department_id: string;
+  department_name: string;
+  created_at: string;
+}
+
+export interface DocumentUsage {
+  document_id: string;
+  filename: string;
+  chunk_count: number;
+  department_id: string;
+  created_at: string;
+}
+
+export interface QueryOverTime {
+  date: string;
+  count: number;
+}
+
+export interface DepartmentActivity {
+  department_id: string;
+  department_name: string;
+  query_count: number;
+  document_count: number;
+  user_count: number;
+}
+
+export async function getAnalyticsOverview(): Promise<AnalyticsOverview> {
+  const res = await fetch(`${API_URL}/analytics/overview`, { headers: authHeaders() });
+  return handle<AnalyticsOverview>(res);
+}
+
+export async function getTopQueries(limit = 10): Promise<TopQuery[]> {
+  const res = await fetch(`${API_URL}/analytics/top-queries?limit=${limit}`, { headers: authHeaders() });
+  return handle<TopQuery[]>(res);
+}
+
+export async function getUnansweredQueries(limit = 20): Promise<UnansweredQuery[]> {
+  const res = await fetch(`${API_URL}/analytics/unanswered?limit=${limit}`, { headers: authHeaders() });
+  return handle<UnansweredQuery[]>(res);
+}
+
+export async function getDocumentUsage(limit = 10): Promise<DocumentUsage[]> {
+  const res = await fetch(`${API_URL}/analytics/document-usage?limit=${limit}`, { headers: authHeaders() });
+  return handle<DocumentUsage[]>(res);
+}
+
+export async function getQueriesOverTime(): Promise<QueryOverTime[]> {
+  const res = await fetch(`${API_URL}/analytics/queries-over-time`, { headers: authHeaders() });
+  return handle<QueryOverTime[]>(res);
+}
+
+export async function getDepartmentActivity(): Promise<DepartmentActivity[]> {
+  const res = await fetch(`${API_URL}/analytics/department-activity`, { headers: authHeaders() });
+  return handle<DepartmentActivity[]>(res);
+}
+
+// ── Meeting assistant ─────────────────────────────────────────────────────────
+
+export interface MeetingActionItem {
+  text: string;
+  owner: string | null;
+  deadline: string | null;
+  priority: "high" | "medium" | "low";
+}
+
+export interface MeetingResult {
+  summary: string;
+  decisions: string[];
+  action_items: MeetingActionItem[];
+  participants: string[];
+  duration_estimate: string | null;
+  follow_up_questions: string[];
+}
+
+export async function processMeeting(
+  transcript: string,
+  title?: string
+): Promise<MeetingResult> {
+  const res = await fetch(`${API_URL}/meeting/process`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ transcript, title: title ?? null }),
+  });
+  return handle<MeetingResult>(res);
+}
+
+/** POST /meeting/upload — extract text from a .txt/.pdf file server-side, then
+ *  run the same meeting analysis as processMeeting(). */
+export async function uploadTranscript(file: File): Promise<MeetingResult> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API_URL}/meeting/upload`, {
+    method: "POST",
+    headers: authHeaders(false), // let the browser set the multipart boundary
+    body: form,
+  });
+  return handle<MeetingResult>(res);
+}
+
+// ── Document search ───────────────────────────────────────────────────────────
+
+export interface SearchResult {
+  document_id: string;
+  source_filename: string;
+  page_number: number | null;
+  chunk_preview: string;
+  score: number;
+}
+
+/** GET /documents/search?q={query} — semantic search within the caller's dept. */
+export async function searchDocuments(query: string): Promise<SearchResult[]> {
+  const res = await fetch(
+    `${API_URL}/documents/search?q=${encodeURIComponent(query)}`,
+    { headers: authHeaders() }
+  );
+  return handle<SearchResult[]>(res);
 }
