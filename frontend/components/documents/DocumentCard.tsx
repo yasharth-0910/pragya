@@ -150,8 +150,8 @@ export default function DocumentCard({ doc }: DocumentCardProps) {
           {/* Ready → two actions. */}
           {isReady && (
             <div className="mt-3 flex items-center gap-2">
-              {/* Chat scoped to this doc. NOTE: backend retrieval filters by
-                  department, not document, so ?doc= is currently a hint only. */}
+              {/* Chat scoped to this doc — ?doc= drives a document_id filter ANDed
+                  with the visibility rules in retrieval (chat page reads the param). */}
               <Link
                 href={`/chat?doc=${doc.id}`}
                 className="interactive rounded-full border border-input px-3.5 py-1.5 font-sans text-[12.5px] text-primary hover:bg-subtle active:scale-[0.98]"

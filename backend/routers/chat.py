@@ -197,7 +197,14 @@ async def chat_query(
 
     # ── 3. Retrieve grounding chunks (full hybrid + rerank pipeline) ──
     # retrieve() builds the 3-tier visibility filter from current_user itself.
-    chunks = await retrieve(payload.query, current_user, method=CHAT_RETRIEVAL_METHOD)
+    # document_id (when present) narrows retrieval to one document, ANDed with that
+    # visibility filter — so it can only ever restrict, never widen, access.
+    chunks = await retrieve(
+        payload.query,
+        current_user,
+        method=CHAT_RETRIEVAL_METHOD,
+        document_id=payload.document_id,
+    )
 
     # Capture plain values for the generator closure — avoid touching the ORM
     # `current_user`/`session` objects inside the post-response generator.

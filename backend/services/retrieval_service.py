@@ -23,6 +23,7 @@ Two hard rules run through every function here:
 import asyncio
 import logging
 import time
+import uuid
 
 import google.generativeai as genai
 # NOTE on the Qdrant API: qdrant-client 1.18 REMOVED the old `client.search(...)`
@@ -32,7 +33,7 @@ import google.generativeai as genai
 # the target vector with the `using=` argument ("dense" / "sparse") instead of
 # wrapping the vector in a NamedVector. SparseVector is still the way to express a
 # sparse query.
-from qdrant_client.models import SparseVector
+from qdrant_client.models import FieldCondition, Filter, MatchValue, SparseVector
 from sentence_transformers import CrossEncoder
 
 from config import get_settings
@@ -317,6 +318,7 @@ async def retrieve(
     query: str,
     current_user,
     method: str = "hybrid_rerank",
+    document_id: uuid.UUID | None = None,
 ) -> list[dict]:
     """Run one of the three retrieval pipelines and return ranked result dicts.
 
@@ -333,6 +335,12 @@ async def retrieve(
     Qdrant stored them as strings and MatchValue compares by exact type, so a
     uuid.UUID would match zero points with no error.
 
+    document_id (optional) scopes retrieval to a single document: we AND the chunk's
+    payload.document_id against the (already ANDed-then-ORed) visibility filter. This
+    is AND logic — a chunk must satisfy the visibility rules AND belong to this
+    document. Because the visibility filter is preserved, a user cannot reach a
+    document they lack access to by passing its id; the scope only ever narrows.
+
     Logs the method, result count, and elapsed milliseconds for every call — this
     timing feeds the latency column of the research comparison.
     """
@@ -343,6 +351,17 @@ async def retrieve(
     query_filter = build_visibility_filter(
         str(current_user.department_id), str(current_user.id)
     )
+
+    # Optional doc scoping: wrap the visibility filter in a `must` alongside a
+    # document_id match. Nesting the visibility Filter inside `must` keeps its
+    # OR-of-tiers intact while requiring the document_id match on top (AND).
+    if document_id is not None:
+        query_filter = Filter(
+            must=[
+                query_filter,
+                FieldCondition(key="document_id", match=MatchValue(value=str(document_id))),
+            ]
+        )
 
     # embed_query is a blocking HTTP call; run it off the event loop so concurrent
     # requests aren't stalled while Gemini responds.

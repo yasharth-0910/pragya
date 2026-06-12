@@ -4,9 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { getDepartments, getMe, getSessions } from "@/lib/api";
+import { useDepartments, useMe, useSessions } from "@/lib/hooks";
+import { useKeyboardShortcuts } from "@/lib/useKeyboardShortcuts";
+import { ToastProvider } from "@/lib/useToast";
 import { clearToken, getUser, isLoggedIn } from "@/lib/auth";
-import type { ChatSession } from "@/types";
 
 /* ── Icons (16px, hand-drawn strokes, no icon library — DESIGN.md §6) ──────── */
 
@@ -197,9 +198,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [authorized, setAuthorized] = useState(false);
   const [checked, setChecked] = useState(false);
 
-  const [name, setName] = useState<string | null>(null);
-  const [deptName, setDeptName] = useState<string | null>(null);
-  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  // Cache-first reads (SWR). name + deptName are derived from me + departments
+  // rather than held in local state — one source of truth, no manual refetching.
+  const { data: me } = useMe();
+  const { data: departments } = useDepartments();
+  const { data: sessions = [], mutate: mutateSessions } = useSessions();
+  const name = me?.name ?? null;
+  const deptName = departments?.find((d) => d.id === me?.department_id)?.name ?? null;
 
   // Sidebar state — initialised from localStorage after mount to avoid hydration mismatch
   const [collapsed, setCollapsed] = useState(false);
@@ -210,6 +215,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [chatsOpen, setChatsOpen] = useState(true);
+
+  // Keyboard-shortcuts state: the help modal + a ref to the sidebar search input.
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [isMac, setIsMac] = useState(true); // for the right modifier glyph in the modal
+  const searchRef = useRef<HTMLInputElement>(null);
 
   const isResizing = useRef(false);
 
@@ -233,34 +243,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     requestAnimationFrame(() => setTransitionEnabled(true));
   }, []);
 
-  // Load user name + dept + sessions
+  // Refresh sessions when the route changes (a new chat may have been created on
+  // another page). SWR otherwise revalidates on its 30s interval / window focus.
   useEffect(() => {
     if (!authorized) return;
-    let cancelled = false;
-
-    Promise.all([getMe(), getDepartments()])
-      .then(([u, depts]) => {
-        if (cancelled) return;
-        setName(u.name);
-        const dept = depts.find((d) => d.id === u.department_id);
-        setDeptName(dept?.name ?? null);
-      })
-      .catch(() => {});
-
-    getSessions()
-      .then((s) => !cancelled && setSessions(s))
-      .catch(() => {});
-
-    return () => {
-      cancelled = true;
-    };
-  }, [authorized]);
-
-  // Refresh sessions when the route changes (new chat may have been created)
-  useEffect(() => {
-    if (!authorized) return;
-    getSessions().then(setSessions).catch(() => {});
-  }, [authorized, pathname]);
+    mutateSessions();
+  }, [authorized, pathname, mutateSessions]);
 
   // Drag-resize handler (global listeners, cleaned up on unmount)
   useEffect(() => {
@@ -283,6 +271,31 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       document.removeEventListener("mouseup", onMouseUp);
     };
   }, []);
+
+  // Detect platform once (client-only) so the help modal shows ⌘ vs Ctrl correctly.
+  useEffect(() => {
+    setIsMac(/Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent));
+  }, []);
+
+  // Global shortcuts — handlers read current state through the hook's internal ref.
+  useKeyboardShortcuts({
+    onFocusSearch: () => {
+      // Expand the sidebar first if collapsed (the input only exists when expanded).
+      if (collapsed) {
+        setCollapsed(false);
+        localStorage.setItem("sidebar-collapsed", "false");
+      }
+      // Defer so a just-expanded input is mounted before we focus it.
+      setTimeout(() => searchRef.current?.focus(), 60);
+    },
+    onNewChat: () => router.push("/chat"),
+    onToggleHelp: () => setHelpOpen((o) => !o),
+    onEscape: () => {
+      if (helpOpen) return setHelpOpen(false);
+      if (document.activeElement === searchRef.current) return searchRef.current?.blur();
+      if (mobileOpen) setMobileOpen(false);
+    },
+  });
 
   if (!checked) return <div className="min-h-screen bg-main" />;
   if (!authorized) return <div className="min-h-screen bg-main" />;
@@ -319,7 +332,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }`;
 
   /* ── Sidebar markup (shared by desktop fixed + mobile overlay) ─────────────── */
-  function SidebarContent() {
+  // isMobile=false (desktop) owns the searchRef so ⌘K has a single, stable target.
+  function SidebarContent({ isMobile = false }: { isMobile?: boolean }) {
     return (
       <aside
         style={{
@@ -383,8 +397,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <label className="flex cursor-text items-center gap-2 rounded-[8px] border border-[#322d24] px-3 py-2 text-paper/40 transition-shadow focus-within:shadow-[0_0_0_2px_rgba(232,200,126,0.3)]">
               <SearchIcon />
               <input
+                ref={isMobile ? undefined : searchRef}
                 type="text"
-                placeholder="Search"
+                placeholder="Search…"
                 className="flex-1 bg-transparent font-sans text-[12.5px] placeholder:text-paper/40 focus:outline-none"
               />
               <span className="font-mono text-[10px] tracking-[0.04em]">⌘K</span>
@@ -587,6 +602,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
+    <ToastProvider>
     <div className="flex min-h-screen bg-main">
       {/* ── Desktop sidebar (sticky, full height) ── */}
       <div className="sticky top-0 hidden h-screen md:block" style={{ width: effectiveWidth, transition: transitionEnabled ? "width 0.25s ease" : "none" }}>
@@ -623,13 +639,67 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           />
           {/* Sidebar panel */}
           <div className="fixed inset-y-0 left-0 z-50 md:hidden" style={{ width: DEFAULT_W }}>
-            <SidebarContent />
+            <SidebarContent isMobile />
           </div>
         </>
       )}
 
       {/* ── Main content ── */}
       <main className="min-w-0 flex-1 bg-main">{children}</main>
+
+      {/* ── Keyboard shortcuts help (⌘/) — dark overlay, click outside / Esc closes ── */}
+      {helpOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setHelpOpen(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm rounded-[12px] border border-border bg-card p-5"
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="font-serif text-[16px] tracking-[-0.01em] text-primary">
+                Keyboard shortcuts
+              </h2>
+              <button
+                type="button"
+                onClick={() => setHelpOpen(false)}
+                aria-label="Close"
+                className="interactive flex h-7 w-7 items-center justify-center rounded-[6px] text-muted hover:bg-subtle hover:text-primary"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M18 6 6 18M6 6l12 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
+            <div className="space-y-2.5">
+              {(
+                [
+                  { keys: [isMac ? "⌘" : "Ctrl", "K"], desc: "Focus search" },
+                  { keys: [isMac ? "⌘" : "Ctrl", "N"], desc: "New chat" },
+                  { keys: [isMac ? "⌘" : "Ctrl", "/"], desc: "Show this help" },
+                  { keys: ["Esc"], desc: "Close · clear focus" },
+                ] as const
+              ).map((row) => (
+                <div key={row.desc} className="flex items-center justify-between">
+                  <span className="font-sans text-[13px] text-primary">{row.desc}</span>
+                  <span className="flex items-center gap-1">
+                    {row.keys.map((k) => (
+                      <kbd
+                        key={k}
+                        className="rounded-[4px] border border-input bg-subtle px-1.5 py-0.5 font-mono text-[11px] text-muted"
+                      >
+                        {k}
+                      </kbd>
+                    ))}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+    </ToastProvider>
   );
 }

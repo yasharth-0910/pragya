@@ -46,6 +46,12 @@ class ChatRequest(BaseModel):
     session_id: uuid.UUID | None = Field(
         default=None, description="Existing session to continue; null starts a new session."
     )
+    # When set, retrieval is scoped to this document only. When null, searches all
+    # dept docs (existing behavior). The scope is still ANDed with the visibility
+    # filter, so passing an inaccessible document_id simply yields no chunks.
+    document_id: uuid.UUID | None = Field(
+        default=None, description="Scope retrieval to a single document; null searches all accessible docs."
+    )
 
 
 class ChatMessageResponse(BaseModel):

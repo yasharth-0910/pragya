@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { deleteSession, getSessions } from "@/lib/api";
+import { deleteSession, getSessionMessages, getSessions } from "@/lib/api";
+import { exportChatAsPDF } from "@/lib/exportChat";
 import type { ChatSession } from "@/types";
 
 /* ── Icons ───────────────────────────────────────────────────────────────────── */
@@ -28,6 +29,14 @@ function TrashIcon() {
   return (
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function DownloadIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -81,6 +90,23 @@ function SessionCard({
 }) {
   const router = useRouter();
   const [deleting, setDeleting] = useState<"idle" | "confirm" | "pending">("idle");
+  const [exporting, setExporting] = useState(false);
+
+  async function handleExport(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (exporting) return;
+    setExporting(true);
+    try {
+      // Fetch the full transcript on demand (the card only holds a summary), then
+      // hand it to the shared print-to-PDF helper.
+      const msgs = await getSessionMessages(session.id);
+      exportChatAsPDF(session, msgs);
+    } catch {
+      // Best-effort — a failed fetch just leaves the user on the page.
+    } finally {
+      setExporting(false);
+    }
+  }
 
   async function handleDeleteClick(e: React.MouseEvent) {
     e.stopPropagation();
@@ -135,16 +161,28 @@ function SessionCard({
         )}
       </div>
 
-      {/* Delete — trash icon on hover, then inline confirm */}
+      {/* Actions — export + delete icons on hover; delete then inline-confirms */}
       {deleting === "idle" ? (
-        <button
-          type="button"
-          onClick={handleDeleteClick}
-          aria-label="Delete conversation"
-          className="absolute right-3 top-3 hidden h-6 w-6 items-center justify-center rounded-[5px] text-muted group-hover:flex hover:bg-subtle hover:text-primary"
-        >
-          <TrashIcon />
-        </button>
+        <div className="absolute right-3 top-3 hidden items-center gap-1 group-hover:flex">
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={exporting}
+            aria-label="Export as PDF"
+            title="Export as PDF"
+            className="flex h-6 w-6 items-center justify-center rounded-[5px] text-muted hover:bg-subtle hover:text-primary disabled:opacity-50"
+          >
+            <DownloadIcon />
+          </button>
+          <button
+            type="button"
+            onClick={handleDeleteClick}
+            aria-label="Delete conversation"
+            className="flex h-6 w-6 items-center justify-center rounded-[5px] text-muted hover:bg-subtle hover:text-primary"
+          >
+            <TrashIcon />
+          </button>
+        </div>
       ) : (
         <div
           onClick={(e) => e.stopPropagation()}

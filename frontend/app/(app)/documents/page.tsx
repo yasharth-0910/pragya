@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { getDocuments, searchDocuments, type SearchResult } from "@/lib/api";
-import type { Document } from "@/types";
+import { useEffect, useRef, useState } from "react";
+import { searchDocuments, type SearchResult } from "@/lib/api";
+import { useDocuments } from "@/lib/hooks";
 import UploadZone from "@/components/documents/UploadZone";
 import DocumentCard from "@/components/documents/DocumentCard";
 
@@ -56,8 +56,10 @@ function SearchResultCard({ result }: { result: SearchResult }) {
 /* ── Page ────────────────────────────────────────────────────────────────────── */
 
 export default function DocumentsPage() {
-  const [documents, setDocuments] = useState<Document[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  // Cache-first list with status-aware polling (5s while processing, else 30s).
+  // mutate() is the post-upload refresh hook handed to UploadZone.
+  const { data: documents = [], isLoading, mutate } = useDocuments();
+  const loaded = !isLoading;
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -70,17 +72,6 @@ export default function DocumentsPage() {
     visFilter === "all" ? documents : documents.filter((d) => d.visibility === visFilter);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const reload = useCallback(() => {
-    getDocuments()
-      .then(setDocuments)
-      .catch(() => setDocuments([]))
-      .finally(() => setLoaded(true));
-  }, []);
-
-  useEffect(() => {
-    reload();
-  }, [reload]);
 
   function handleSearchChange(value: string) {
     setSearchQuery(value);
@@ -126,7 +117,7 @@ export default function DocumentsPage() {
 
       <div className="mx-auto max-w-3xl px-6 py-8">
         {/* Section 1 — upload */}
-        <UploadZone onUploaded={reload} />
+        <UploadZone onUploaded={() => mutate()} />
 
         {/* Section 2 — search bar */}
         <div className="mt-7">

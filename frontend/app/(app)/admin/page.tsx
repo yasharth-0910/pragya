@@ -17,17 +17,16 @@ import {
   getAdminDepartments,
   getAdminUsers,
   updateUserRole,
-  getAnalyticsOverview,
   getTopQueries,
   getUnansweredQueries,
   getQueriesOverTime,
   getDepartmentActivity,
-  type AnalyticsOverview,
   type TopQuery,
   type UnansweredQuery,
   type QueryOverTime,
   type DepartmentActivity,
 } from "@/lib/api";
+import { useAnalyticsOverview } from "@/lib/hooks";
 import { getUser } from "@/lib/auth";
 import type { DepartmentWithCount, UserAdmin } from "@/types";
 
@@ -99,7 +98,8 @@ const TOOLTIP_STYLE = {
 } as const;
 
 export default function AdminPage() {
-  const [overview, setOverview] = useState<AnalyticsOverview | null>(null);
+  // Overview metrics via SWR (60s refresh) — instant from cache on revisit.
+  const { data: overview, isLoading: overviewLoading } = useAnalyticsOverview();
   const [topQueries, setTopQueries] = useState<TopQuery[]>([]);
   const [unanswered, setUnanswered] = useState<UnansweredQuery[]>([]);
   const [overTime, setOverTime] = useState<QueryOverTime[]>([]);
@@ -115,15 +115,14 @@ export default function AdminPage() {
   const currentUserId = getUser()?.sub;
 
   useEffect(() => {
+    // Overview is handled by useAnalyticsOverview(); the rest still load together.
     Promise.all([
-      getAnalyticsOverview(),
       getTopQueries(),
       getUnansweredQueries(),
       getQueriesOverTime(),
       getDepartmentActivity(),
     ])
-      .then(([ov, tq, un, ot, da]) => {
-        setOverview(ov);
+      .then(([tq, un, ot, da]) => {
         setTopQueries(tq);
         setUnanswered(un);
         setOverTime(ot);
@@ -170,7 +169,7 @@ export default function AdminPage() {
       <div className="mx-auto max-w-5xl space-y-8 px-6 py-8">
 
         {/* ── Row 1: Metric cards ─────────────────────────────────────────── */}
-        {!analyticsLoaded ? (
+        {overviewLoading ? (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             {[0, 1, 2, 3].map((i) => (
               <div

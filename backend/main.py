@@ -24,10 +24,14 @@ _DEFAULT_DEPARTMENTS = [
     "Information Technology",
     "Finance",
     "Engineering",
-    "Executive",
+    "Marketing",
+    "Sales",
     "Operations",
     "Legal",
-    "Marketing",
+    "Executive",
+    "Growth",
+    "Customer Success",
+    "Product Management",
 ]
 
 
@@ -53,7 +57,7 @@ async def lifespan(app: FastAPI):
     # 2. Create tables if missing. Idempotent (checkfirst=True). Dev-only —
     #    production manages schema with Alembic migrations.
     await create_tables()
-    # 3. Seed the 8 default departments on first boot (skipped if table is non-empty).
+    # 3. Seed the 12 default departments on first boot (skipped if table is non-empty).
     await seed_departments()
     # 4. Ensure the Qdrant collection exists before the first request arrives.
     #    Idempotent — skips silently if it already exists.

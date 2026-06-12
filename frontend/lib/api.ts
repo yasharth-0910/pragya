@@ -168,7 +168,8 @@ export interface ChatStreamHandlers {
 export function queryChat(
   query: string,
   sessionId: string | undefined,
-  handlers: ChatStreamHandlers
+  handlers: ChatStreamHandlers,
+  documentId?: string | null
 ): AbortController {
   const controller = new AbortController();
 
@@ -177,7 +178,12 @@ export function queryChat(
       const res = await fetch(`${API_URL}/chat/query`, {
         method: "POST",
         headers: authHeaders(),
-        body: JSON.stringify({ query, session_id: sessionId ?? null }),
+        // document_id scopes retrieval to one doc server-side; null = all dept docs.
+        body: JSON.stringify({
+          query,
+          session_id: sessionId ?? null,
+          document_id: documentId ?? null,
+        }),
         signal: controller.signal,
       });
 

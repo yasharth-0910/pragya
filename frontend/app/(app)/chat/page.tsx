@@ -1,9 +1,11 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useTheme } from "next-themes";
-import { getDepartments, getDocuments, getMe, getSessionMessages, getSessions, queryChat } from "@/lib/api";
+import { getSessionMessages, queryChat } from "@/lib/api";
+import { useDepartments, useDocuments, useMe, useSessions } from "@/lib/hooks";
+import { exportChatAsPDF } from "@/lib/exportChat";
 import type { MessageSource } from "@/types";
 import ChatMessage from "@/components/chat/ChatMessage";
 import ChatInput from "@/components/chat/ChatInput";
@@ -48,6 +50,37 @@ const SUGGESTION_CHIPS = [
   "What are the key policies?",
 ] as const;
 
+// Shown instead of the above when the chat is scoped to one document (?doc=).
+const DOC_SUGGESTION_CHIPS = [
+  "Summarise this document",
+  "What are the key points?",
+  "What action items are mentioned?",
+] as const;
+
+/* ── Tiny topbar glyphs (monochrome — DESIGN.md §8 forbids emoji in UI) ─────── */
+function FileGlyphMini() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="shrink-0">
+      <path d="M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7l-4-4Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M14 3v4h4" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function XMini() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M18 6 6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+function DownloadIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 /* ── Topbar theme toggle ──────────────────────────────────────────────────── */
 function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
@@ -85,14 +118,28 @@ function ThemeToggle() {
 }
 
 function ChatInner() {
+  const router = useRouter();
   const searchParams = useSearchParams();
+
+  // Sessions come from the shared SWR cache (same data the sidebar shows), so the
+  // title resolves instantly on navigation and finalize() can refresh on demand.
+  const { data: sessions = [], mutate: mutateSessions } = useSessions();
+
+  // Topbar chips + doc scoping read from the shared SWR caches (instant on revisit).
+  const { data: documents = [] } = useDocuments();
+  const { data: me } = useMe();
+  const { data: departments = [] } = useDepartments();
+  const docCount = documents.length;
+  const deptName = departments.find((d) => d.id === me?.department_id)?.name ?? null;
+
+  // ?doc=<id> scopes the whole conversation to one document — retrieval AND the UI.
+  const docId = searchParams.get("doc");
+  const scopedDoc = docId ? documents.find((d) => d.id === docId) ?? null : null;
+  const scopedName = scopedDoc?.original_filename ?? null;
 
   const [messages, setMessages] = useState<UIMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(searchParams.get("session"));
-  const [sessionTitle, setSessionTitle] = useState<string | null>(null);
   const [streaming, setStreaming] = useState(false);
-  const [docCount, setDocCount] = useState<number | null>(null);
-  const [deptName, setDeptName] = useState<string | null>(null);
 
   // Lifted text state so suggestion chips can prefill the input (Fix 4c)
   const [inputText, setInputText] = useState("");
@@ -109,18 +156,10 @@ function ChatInner() {
     setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)));
   }, []);
 
-  // Doc-count chip + dept name
-  useEffect(() => {
-    getDocuments()
-      .then((d) => setDocCount(d.length))
-      .catch(() => setDocCount(null));
-    Promise.all([getMe(), getDepartments()])
-      .then(([u, depts]) => {
-        const dept = depts.find((d) => d.id === u.department_id);
-        setDeptName(dept?.name ?? null);
-      })
-      .catch(() => {});
-  }, []);
+  // Clear the doc scope: drop ?doc, keep the active session if there is one.
+  function clearDocScope() {
+    router.push(sessionId ? `/chat?session=${sessionId}` : "/chat");
+  }
 
   // One timer for all relative timestamps — avoids N timers for N messages
   useEffect(() => {
@@ -136,7 +175,6 @@ function ChatInner() {
     setSessionId(sid);
     if (!sid) {
       setMessages([]);
-      setSessionTitle(null);
       return;
     }
     let cancelled = false;
@@ -156,14 +194,6 @@ function ChatInner() {
       .catch(() => {
         if (!cancelled) setMessages([]);
       });
-    // Fetch session title from sessions list
-    getSessions()
-      .then((sessions) => {
-        if (cancelled) return;
-        const s = sessions.find((s) => s.id === sid);
-        setSessionTitle(s?.title ?? null);
-      })
-      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -178,12 +208,16 @@ function ChatInner() {
   async function finalize(aiId: string) {
     let sid = sessionId;
     if (!sid) {
-      const sessions = await getSessions().catch(() => []);
-      if (sessions.length > 0) {
-        sid = sessions[0].id;
+      // A first message creates the session server-side; revalidate to pick up its
+      // id (and refresh the sidebar history at the same time).
+      const fresh = (await mutateSessions().catch(() => [])) ?? [];
+      if (fresh.length > 0) {
+        sid = fresh[0].id;
         setSessionId(sid);
         loadedSessionRef.current = sid;
-        window.history.replaceState(null, "", `?session=${sid}`);
+        // Keep the doc scope in the URL so a reload stays scoped to the document.
+        const docSuffix = docId ? `&doc=${docId}` : "";
+        window.history.replaceState(null, "", `?session=${sid}${docSuffix}`);
       }
     }
     if (!sid) return;
@@ -228,10 +262,12 @@ function ChatInner() {
         setStreaming(false);
         void finalize(aiId);
       },
-    });
+    }, docId ?? undefined);
   }
 
   const isEmpty = messages.length === 0;
+  // Title resolved from the cached sessions list — no separate fetch.
+  const sessionTitle = sessions.find((s) => s.id === sessionId)?.title ?? null;
 
   return (
     <div className="flex h-screen flex-col">
@@ -241,18 +277,47 @@ function ChatInner() {
           {sessionTitle ?? "Ask your knowledge base"}
         </h1>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5">
-            {deptName && (
-              <span className="rounded-[5px] bg-chip px-2 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-chip-text">
-                {deptName}
-              </span>
-            )}
-            {docCount != null && (
-              <span className="rounded-[5px] bg-chip px-2 py-1 font-mono text-[10px] tracking-[0.04em] text-chip-text">
-                {docCount} doc{docCount === 1 ? "" : "s"}
-              </span>
-            )}
-          </div>
+          {docId ? (
+            /* Doc-scoped banner — replaces the dept/doc chips. × clears the scope. */
+            <span className="flex items-center gap-1.5 rounded-[5px] bg-chip py-1 pl-2 pr-1 font-mono text-[10px] text-chip-text">
+              <FileGlyphMini />
+              <span className="max-w-[220px] truncate">{scopedName ?? "Document"}</span>
+              <button
+                type="button"
+                onClick={clearDocScope}
+                aria-label="Clear document scope"
+                className="interactive flex h-4 w-4 items-center justify-center rounded-full text-chip-text/70 hover:text-chip-text active:scale-[0.9]"
+              >
+                <XMini />
+              </button>
+            </span>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              {deptName && (
+                <span className="rounded-[5px] bg-chip px-2 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-chip-text">
+                  {deptName}
+                </span>
+              )}
+              {docCount > 0 && (
+                <span className="rounded-[5px] bg-chip px-2 py-1 font-mono text-[10px] tracking-[0.04em] text-chip-text">
+                  {docCount} doc{docCount === 1 ? "" : "s"}
+                </span>
+              )}
+            </div>
+          )}
+          {/* Export the loaded conversation to PDF (browser print). Only when there's
+              something to export. */}
+          {messages.length > 0 && (
+            <button
+              type="button"
+              onClick={() => exportChatAsPDF({ title: sessionTitle }, messages)}
+              aria-label="Export as PDF"
+              title="Export as PDF"
+              className="interactive flex h-9 w-9 items-center justify-center rounded-full text-muted hover:text-primary active:scale-[0.98]"
+            >
+              <DownloadIcon />
+            </button>
+          )}
           <ThemeToggle />
         </div>
       </header>
@@ -267,11 +332,13 @@ function ChatInner() {
                 {getGreeting()}
               </p>
               <p className="mt-1.5 font-sans text-[13.5px] text-muted">
-                Ask anything about your department&rsquo;s documents
+                {docId
+                  ? `Ask anything about ${scopedName ?? "this document"}`
+                  : "Ask anything about your department’s documents"}
               </p>
             </div>
             <div className="flex flex-wrap justify-center gap-2">
-              {SUGGESTION_CHIPS.map((chip) => (
+              {(docId ? DOC_SUGGESTION_CHIPS : SUGGESTION_CHIPS).map((chip) => (
                 <button
                   key={chip}
                   type="button"
