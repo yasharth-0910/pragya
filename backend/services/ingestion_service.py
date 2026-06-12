@@ -68,6 +68,95 @@ def _clean_text(text: str) -> str:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Boilerplate stripping — remove repeated headers/footers/letterhead.
+#
+# WHY: a fixed letterhead, classification banner, and "Page X of Y" footer repeat
+# on every page. Because every chunk then starts with the SAME text, chunks from
+# different documents look semantically similar — diluting embeddings and blunting
+# the reranker's ability to tell relevant context apart. Stripping this boilerplate
+# improves both retrieval precision and reranker discrimination.
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Company name on the letterhead (the corpus is "INFOVANCE TECHNOLOGIES").
+_COMPANY_RE = re.compile(r"infovance", re.IGNORECASE)
+# Document classification / distribution banners.
+_CLASSIFICATION_RE = re.compile(
+    r"^(classification\s*[:\-]|confidential|internal use only|internal\b|"
+    r"restricted|public|do not distribute)",
+    re.IGNORECASE,
+)
+# Bare page markers: "Page 3", "Page 3 of 12", "3", "- 4 -".
+_PAGENUM_RE = re.compile(
+    r"^(page\s+)?\d+(\s+of\s+\d+)?$|^[-–—]\s*\d+\s*[-–—]$", re.IGNORECASE
+)
+# Footer lines ending in a page marker, e.g. "HR-POL-LV-2025-06 - v3.2 - Page 1".
+# The trailing page number varies per page, so the frequency pass can't catch these.
+_FOOTER_RE = re.compile(r"\bpage\s+\d+(\s+of\s+\d+)?\s*$", re.IGNORECASE)
+
+
+def _looks_like_label(line: str) -> bool:
+    # A short (<4-word) line that reads as a structural label/header, not prose:
+    # all-caps (e.g. a doc code "HR-POL-LV-2025-06" or "CASUAL LEAVE") or a
+    # colon-terminated key ("Owner:"). Sentence-case content ("12 days") is kept.
+    if len(line.split()) >= 4:
+        return False
+    letters = [c for c in line if c.isalpha()]
+    all_caps = bool(letters) and all(c.isupper() for c in letters)
+    return all_caps or line.rstrip().endswith(":")
+
+
+def _is_pattern_boilerplate(line: str) -> bool:
+    # Per-line boilerplate test, applied regardless of how often the line repeats
+    # (footers with page numbers vary per page, so frequency alone won't catch them).
+    s = line.strip()
+    if not s:
+        return True
+    return bool(
+        # .match (anchored at start): strips letterhead/footer lines that BEGIN with
+        # the company name, but leaves prose that merely mentions it mid-sentence.
+        _COMPANY_RE.match(s)
+        or _CLASSIFICATION_RE.match(s)
+        or _PAGENUM_RE.match(s)
+        or _FOOTER_RE.search(s)
+        or _looks_like_label(s)
+    )
+
+
+def _strip_boilerplate(pages: list[dict]) -> list[dict]:
+    """Remove repeated header/footer/letterhead lines from already-parsed pages.
+
+    Two passes: (1) drop lines that appear on MORE than 60% of pages (the recurring
+    letterhead/footer), and (2) drop lines matching boilerplate patterns (company
+    name, classification banner, bare page number, short all-caps/colon label)
+    regardless of frequency. Pages that become empty are dropped.
+    """
+    n = len(pages)
+    # Pass 1: count how many pages each (stripped) line appears on. `set(...)` per
+    # page so a line repeated within one page is counted once.
+    freq: dict[str, int] = {}
+    for p in pages:
+        for line in {ln.strip() for ln in p["text"].split("\n") if ln.strip()}:
+            freq[line] = freq.get(line, 0) + 1
+    # >60% of pages = structural boilerplate. Needs ≥2 pages to tell repetition from
+    # a single-page document (where every line trivially appears on "100%" of pages).
+    repeated = {line for line, c in freq.items() if c / n > 0.6} if n >= 2 else set()
+
+    cleaned: list[dict] = []
+    for p in pages:
+        kept = [
+            ln
+            for ln in p["text"].split("\n")
+            if ln.strip()
+            and ln.strip() not in repeated
+            and not _is_pattern_boilerplate(ln)
+        ]
+        text = "\n".join(kept).strip()
+        if text:
+            cleaned.append({"text": text, "page": p["page"]})
+    return cleaned
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Function 1–3: format-specific parsers (bytes → list[{text, page}])
 # ──────────────────────────────────────────────────────────────────────────────
 def parse_pdf(file_bytes: bytes) -> list[dict]:
@@ -87,7 +176,8 @@ def parse_pdf(file_bytes: bytes) -> list[dict]:
             pages.append({"text": text, "page": i + 1})
     finally:
         doc.close()
-    return pages
+    # Strip the recurring letterhead/footer now that we have every page to compare.
+    return _strip_boilerplate(pages)
 
 
 def parse_docx(file_bytes: bytes) -> list[dict]:
@@ -98,6 +188,10 @@ def parse_docx(file_bytes: bytes) -> list[dict]:
         text = para.text.strip()
         if not text:
             continue  # skip empty paragraphs
+        # Drop short header/metadata paragraphs (doc codes, classification labels,
+        # all-caps section labels) — same boilerplate test the PDF path uses.
+        if _is_pattern_boilerplate(text):
+            continue
         # Word has no reliable page-number API (pagination is computed by the
         # renderer, not stored), so page is None — citations from a DOCX show the
         # filename only, no page.
@@ -123,7 +217,8 @@ def parse_pptx(file_bytes: bytes) -> list[dict]:
             continue
         # Slide number (1-based) is used as the "page" for citations.
         pages.append({"text": text, "page": i + 1})
-    return pages
+    # Strip recurring slide headers/footers + per-line label boilerplate.
+    return _strip_boilerplate(pages)
 
 
 # ──────────────────────────────────────────────────────────────────────────────

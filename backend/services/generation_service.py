@@ -51,6 +51,31 @@ def _configure_gemini() -> Settings:
 # ──────────────────────────────────────────────────────────────────────────────
 # Function 1: assemble the citation-enforced prompt
 # ──────────────────────────────────────────────────────────────────────────────
+def _dedupe_by_parent(chunks: list[dict]) -> list[dict]:
+    """Drop chunks whose parent_text we've already seen, preserving order.
+
+    Overlapping hierarchical children frequently map to the SAME parent, so the
+    retrieved top-k can contain several near-identical parent blocks. Sending them
+    all wastes tokens and makes the model over-cite ([Source: 1,2,3,4,5] for a
+    single fact). We key on the first 200 chars of parent_text — a reliable proxy
+    for a near-duplicate parent without an expensive full-string compare — and keep
+    the first occurrence so block order (and thus numbering) stays stable.
+
+    Used by BOTH build_citation_prompt (to number the blocks) and extract_sources
+    (to resolve [Source: N] back to a block). They MUST dedupe identically or the
+    citation numbers won't line up with the sources.
+    """
+    seen: set[str] = set()
+    unique: list[dict] = []
+    for chunk in chunks:
+        key = chunk.get("payload", {}).get("parent_text", "")[:200]
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(chunk)
+    return unique
+
+
 def build_citation_prompt(
     query: str,
     chunks: list[dict],
@@ -95,10 +120,13 @@ def build_citation_prompt(
         parts.append("Conversation so far:\n" + "\n".join(history_lines))
 
     # ── Numbered context blocks ──
+    # Distinct parents only (overlapping children share parents). Numbering is over
+    # the DEDUPED list and restarts at 1 with no gaps; extract_sources dedupes the
+    # same way so [Source: N] still resolves to the right block.
     # Each block: a 1-based number, a Source line (filename + optional page), then
     # the PARENT text (the larger context chunk the LLM should reason over).
     block_texts: list[str] = []
-    for i, chunk in enumerate(chunks, start=1):
+    for i, chunk in enumerate(_dedupe_by_parent(chunks), start=1):
         payload = chunk.get("payload", {})
         filename = payload.get("source_filename", "unknown")
         page = payload.get("page_number")
@@ -194,6 +222,10 @@ def extract_sources(response_text: str, chunks: list[dict]) -> list[dict]:
     NOTE: takes `chunks` in addition to `response_text` — it cannot resolve N → a
     real source without the block list it was numbered against.
     """
+    # Dedupe identically to build_citation_prompt so N indexes the SAME block list
+    # the model was shown (numbering is 1-based over the deduped parents).
+    chunks = _dedupe_by_parent(chunks)
+
     # Find every [Source: N] (tolerating optional spaces, e.g. "[Source:3]").
     cited_numbers = [int(n) for n in re.findall(r"\[Source:\s*(\d+)\]", response_text)]
 
