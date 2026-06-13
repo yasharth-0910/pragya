@@ -35,8 +35,17 @@ PyMuPDF~=1.25               # PDF parsing (fitz) — keeps page numbers
 python-docx~=1.1            # .docx parsing
 python-pptx~=1.0            # .pptx parsing
 
-# ── Evaluation ────────────────────────────────────────────────────────────
-ragas~=0.2                  # RAG metrics: faithfulness, answer relevancy, context precision
+# ── Evaluation (RAGAS harness — backend/evaluation/, not imported by the app) ──
+ragas==0.2.0                # RAG metrics: faithfulness, context precision (answer relevancy needs real embeddings)
+# RAGAS 0.2.0 imports langchain_community.chat_models.vertexai, which only exists
+# in the 0.3.x langchain line — the 1.x line removed it. Pin the whole stack to <0.4
+# or `import ragas` fails. These are eval-only; the app uses google-generativeai directly.
+langchain~=0.3.0
+langchain-core~=0.3.0
+langchain-community~=0.3.0
+langchain-groq~=0.2.0       # Groq judge LLM wrapper (llama-3.1-8b-instant) — independent of the Gemini generator
+groq~=0.37                  # Groq SDK (judge LLM backend)
+nltk~=3.9                   # ragas eagerly instantiates BleuScore at import, which needs nltk
 
 # ── HTTP ──────────────────────────────────────────────────────────────────
 httpx~=0.28                 # async HTTP client (async API calls, tests)

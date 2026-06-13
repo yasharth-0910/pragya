@@ -1,0 +1,38 @@
+{
+  "generator_model": "gemini-3.1-flash-lite",
+  "faithfulness_judge": "ollama:qwen2.5:7b",
+  "context_precision_judge": "groq:llama-3.1-8b-instant",
+  "metrics": [
+    "faithfulness@2",
+    "context_precision@3"
+  ],
+  "results": {
+    "dense": {
+      "faithfulness": 0.8733333333333333,
+      "context_precision": 0.9361111110581944,
+      "average": 0.9047222221957638,
+      "answered": 30,
+      "faithfulness_scored": 30,
+      "context_precision_scored": 30,
+      "total": 30
+    },
+    "hybrid": {
+      "faithfulness": 0.8862068965517241,
+      "context_precision": 0.9281609194886495,
+      "average": 0.9071839080201869,
+      "answered": 30,
+      "faithfulness_scored": 29,
+      "context_precision_scored": 29,
+      "total": 30
+    },
+    "hybrid_rerank": {
+      "faithfulness": 0.75,
+      "context_precision": 0.899999999928333,
+      "average": 0.8249999999641665,
+      "answered": 30,
+      "faithfulness_scored": 30,
+      "context_precision_scored": 30,
+      "total": 30
+    }
+  }
+}

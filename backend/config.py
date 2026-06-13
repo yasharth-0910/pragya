@@ -41,6 +41,18 @@ class Settings(BaseSettings):
     # Matryoshka truncation 3072 → 768: keeps the Qdrant collection small
     # without a meaningful quality loss.
 
+    # ── Groq (RAGAS evaluation judge only) ────────────────────────────────
+    GROQ_API_KEY: str = ""
+    # Used ONLY by the RAGAS evaluation harness (backend/evaluation/) as an
+    # independent judge LLM (llama-3.1-8b-instant), so the generator (Gemini) is
+    # never grading its own answers. Empty-string default so the app boots
+    # without it — only the offline eval scripts read this key.
+    GROQ_API_KEY_2: str = ""
+    GROQ_API_KEY_3: str = ""
+    # Extra Groq keys (separate accounts → separate 500k tokens/day budgets). The
+    # eval harness assigns one key per retrieval experiment so a single account's
+    # daily cap can't stall the whole comparison. Eval-only; empty defaults.
+
     # ── Auth ──────────────────────────────────────────────────────────────
     SECRET_KEY: str
     # 64-char random hex used to sign JWTs — never commit this to git.
