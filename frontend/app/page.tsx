@@ -2,6 +2,7 @@ import SmoothScroll from "@/components/landing/SmoothScroll";
 import HeroBackdrop from "@/components/landing/HeroBackdrop";
 import Nav from "@/components/landing/Nav";
 import Hero from "@/components/landing/Hero";
+import ScrollStory from "@/components/landing/ScrollStory";
 import TerminalDemo from "@/components/landing/TerminalDemo";
 import StickyFeatures from "@/components/landing/StickyFeatures";
 import Footer from "@/components/landing/Footer";
@@ -25,6 +26,9 @@ export default function Home() {
             <Hero />
           </div>
         </section>
+
+        {/* Pinned scrollytelling: Ask → Retrieve → Cite (the method). */}
+        <ScrollStory />
 
         <div className="mx-auto max-w-5xl px-6 sm:px-8">
           <TerminalDemo />

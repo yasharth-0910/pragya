@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
+import { motion, useScroll, useTransform, useReducedMotion } from "motion/react";
 import Reveal from "./Reveal";
 
-/* Sticky-scroll feature section (replaces the flat 3-column strip).
-   Desktop (≥640px): left 40% column is sticky and crossfades the current
-   feature's serif title + description; right 60% column scrolls through one
-   ~80vh panel per feature (icon, detail, mini example).
-   Mobile (<640px): the sticky column is hidden and each panel shows its own
-   title — plain vertical sections, nothing sticky. */
+/* Feature section (Phase 3). Previously a pinned sticky-scroll; now relaxed into
+   three alternating feature rows that reveal with parallax depth — the text and
+   its example card travel at slightly different rates as the row scrolls, giving
+   layered depth without a second scroll-jacking pin (we keep one pinned moment,
+   the ScrollStory). Generous whitespace, slow pacing. Reduced motion: plain
+   stacked blocks, no parallax. */
 
 // Hand-drawn icons, stroke currentColor — no icon library (DESIGN.md §6).
 function FileIcon() {
@@ -55,7 +56,6 @@ function WallIcon() {
 
 // ── Mini examples (one per feature) — token colors only ────────────────────
 
-// a) "Reads everything": file list with pdf/docx/pptx rows fading in.
 function FileListExample() {
   const files: [string, string][] = [
     ["HR_Leave_Policy", "pdf"],
@@ -65,7 +65,6 @@ function FileListExample() {
   return (
     <div className="rounded-[12px] border border-border bg-card px-5 py-3">
       {files.map(([name, ext], i) => (
-        // Nested Reveal: rows fade in one after another once the card is seen.
         <Reveal key={name} delay={i * 120}>
           <div className="flex items-center justify-between py-2.5">
             <span className="font-sans text-[13.5px] text-primary">{name}</span>
@@ -79,7 +78,6 @@ function FileListExample() {
   );
 }
 
-// b) "Cites everything": chat bubble with a citation chip + source tag (§5).
 function CitationExample() {
   return (
     <div className="rounded-[14px] rounded-bl-[3px] border border-border bg-card px-5 py-4">
@@ -94,22 +92,17 @@ function CitationExample() {
   );
 }
 
-// c) "Walls that hold": two department boxes split by a hairline.
 function AccessExample() {
   return (
     <div>
       <div className="grid grid-cols-2 overflow-hidden rounded-[12px] border border-border bg-card">
         <div className="border-r border-border px-5 py-4">
           <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-chip-text">HR</div>
-          <p className="mt-2 font-sans text-[12.5px] leading-[1.7] text-muted">
-            sees HR documents
-          </p>
+          <p className="mt-2 font-sans text-[12.5px] leading-[1.7] text-muted">sees HR documents</p>
         </div>
         <div className="px-5 py-4">
           <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-chip-text">IT</div>
-          <p className="mt-2 font-sans text-[12.5px] leading-[1.7] text-muted">
-            sees IT documents
-          </p>
+          <p className="mt-2 font-sans text-[12.5px] leading-[1.7] text-muted">sees IT documents</p>
         </div>
       </div>
       {/* The wall is real: this is the actual Qdrant filter, not a promise. */}
@@ -123,7 +116,6 @@ function AccessExample() {
 type Feature = {
   title: string;
   desc: string;
-  detail: string;
   icon: ReactNode;
   example: ReactNode;
 };
@@ -132,113 +124,86 @@ const FEATURES: Feature[] = [
   {
     title: "Reads everything",
     desc: "PDFs, Word, and slide decks are parsed with their page numbers intact, then chunked so retrieval stays precise.",
-    detail: "Drop in a policy PDF, a process doc, a deck from the last all-hands — each is parsed and indexed within seconds.",
     icon: <FileIcon />,
     example: <FileListExample />,
   },
   {
     title: "Cites everything",
     desc: "Every answer carries its receipts — the source file and the exact page, so a claim can always be checked.",
-    detail: "No answer arrives without a link back to the file and page it came from. If it can't be cited, it isn't said.",
     icon: <CiteIcon />,
     example: <CitationExample />,
   },
   {
     title: "Walls that hold",
     desc: "Access is enforced at the vector-database query itself. You only ever see answers drawn from your department's documents.",
-    detail: "Department access isn't a UI checkbox — it's a filter applied inside the data layer on every single query.",
     icon: <WallIcon />,
     example: <AccessExample />,
   },
 ];
 
-export default function StickyFeatures() {
-  const [active, setActive] = useState(0);
-  const panelRefs = useRef<(HTMLDivElement | null)[]>([]);
-
-  useEffect(() => {
-    // Whichever right-column panel crosses the middle band of the viewport
-    // becomes the active feature shown in the sticky left column.
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            setActive(Number((entry.target as HTMLElement).dataset.index));
-          }
-        }
-      },
-      { rootMargin: "-45% 0px -45% 0px", threshold: 0 }
-    );
-    panelRefs.current.forEach((panel) => panel && observer.observe(panel));
-    return () => observer.disconnect();
-  }, []);
-
+// A scroll-linked parallax wrapper. The child drifts within `range` (px) as the
+// element travels through the viewport. Off under reduced motion.
+function Parallax({
+  children,
+  range = [40, -40],
+  className = "",
+}: {
+  children: ReactNode;
+  range?: [number, number];
+  className?: string;
+}) {
+  const reduceMotion = useReducedMotion();
+  const ref = useRef<HTMLDivElement>(null);
+  const { scrollYProgress } = useScroll({ target: ref, offset: ["start end", "end start"] });
+  const y = useTransform(scrollYProgress, [0, 1], range);
   return (
-    <section id="how-it-works" className="mt-24 border-y border-border bg-subtle">
-      <div className="mx-auto max-w-4xl px-7 sm:grid sm:grid-cols-[40%_60%]">
-        {/* Left column — sticky on ≥640px, hidden on mobile. */}
-        <div className="hidden sm:block">
-          <div className="sticky top-0 flex h-screen flex-col justify-center pr-12">
-            <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted">
-              How it works
-            </div>
+    <motion.div ref={ref} style={reduceMotion ? undefined : { y }} className={className}>
+      {children}
+    </motion.div>
+  );
+}
 
-            {/* All three title/desc pairs stacked in one grid cell; the
-               active one crossfades in as the right column scrolls. */}
-            <div className="mt-5 grid">
-              {FEATURES.map((f, i) => (
-                <div
-                  key={f.title}
-                  style={{ gridArea: "1 / 1" }}
-                  aria-hidden={i !== active}
-                  className={`transition-opacity duration-300 ${
-                    i === active ? "opacity-100" : "pointer-events-none opacity-0"
-                  }`}
-                >
-                  <h3 className="font-serif text-[32px] leading-[1.15] tracking-[-0.02em] text-primary">
-                    {f.title}
-                  </h3>
-                  <p className="mt-4 font-sans text-[14px] leading-[1.75] text-muted">
-                    {f.desc}
-                  </p>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-6 font-mono text-[10px] tracking-[0.1em] text-muted">
-              0{active + 1} / 0{FEATURES.length}
-            </div>
+export default function StickyFeatures() {
+  return (
+    <section id="how-it-works" className="border-y border-border bg-subtle">
+      <div className="mx-auto max-w-5xl px-6 py-24 sm:px-8 sm:py-32">
+        <Reveal>
+          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
+            What you can count on
           </div>
-        </div>
+        </Reveal>
 
-        {/* Right column — one tall panel per feature. */}
-        <div>
-          {FEATURES.map((f, i) => (
-            <div
-              key={f.title}
-              ref={(el) => {
-                panelRefs.current[i] = el;
-              }}
-              data-index={i}
-              className="flex flex-col justify-center py-14 sm:min-h-[80vh] sm:py-16"
-            >
-              {/* Mobile-only title/desc — stands in for the hidden sticky column. */}
-              <h3 className="font-serif text-[22px] leading-[1.2] text-primary sm:hidden">
-                {f.title}
-              </h3>
-              <p className="mt-3 font-sans text-[14px] leading-[1.75] text-muted sm:hidden">
-                {f.desc}
-              </p>
+        <div className="mt-16 space-y-24 sm:mt-24 sm:space-y-36">
+          {FEATURES.map((f, i) => {
+            const flip = i % 2 === 1; // alternate sides for rhythm
+            return (
+              <div key={f.title} className="grid items-center gap-10 sm:grid-cols-2 sm:gap-16">
+                {/* Text column — foreground, gentle opposite parallax for depth. */}
+                <Parallax
+                  range={[16, -16]}
+                  className={flip ? "sm:order-2" : "sm:order-1"}
+                >
+                  <Reveal>
+                    <div className="text-chip-text">{f.icon}</div>
+                    <h3 className="mt-5 font-serif text-[clamp(1.6rem,3vw,2rem)] leading-[1.15] tracking-[-0.02em] text-primary">
+                      {f.title}
+                    </h3>
+                    <p className="mt-4 max-w-md font-sans text-[14.5px] leading-[1.75] text-muted">
+                      {f.desc}
+                    </p>
+                  </Reveal>
+                </Parallax>
 
-              <Reveal className="mt-8 sm:mt-0">
-                <div className="text-chip-text">{f.icon}</div>
-                <p className="mt-4 max-w-md font-sans text-[14px] leading-[1.75] text-muted">
-                  {f.detail}
-                </p>
-                <div className="mt-7 max-w-md">{f.example}</div>
-              </Reveal>
-            </div>
-          ))}
+                {/* Visual column — background layer, larger parallax travel. */}
+                <Parallax
+                  range={[48, -48]}
+                  className={flip ? "sm:order-1" : "sm:order-2"}
+                >
+                  <Reveal delay={120}>{f.example}</Reveal>
+                </Parallax>
+              </div>
+            );
+          })}
         </div>
       </div>
     </section>
