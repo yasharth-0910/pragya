@@ -37,6 +37,9 @@ export default function SmoothScroll({ children }: { children: ReactNode }) {
       // Smooth the wheel/trackpad only. Touch devices stay on native momentum
       // scroll — smoothing touch feels laggy and drains battery (mobile spec).
       smoothWheel: true,
+      // Let Lenis own in-page anchor clicks (nav links, "See the method" CTA) so
+      // they smooth-scroll through Lenis instead of jumping / fighting its rAF.
+      anchors: true,
     });
 
     // Drive Lenis from Framer Motion's frame loop (see the note above).

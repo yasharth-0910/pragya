@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   motion,
   useScroll,
@@ -45,7 +45,18 @@ export default function ScrollStory() {
     offset: ["start start", "end end"],
   });
 
-  if (reduceMotion) return <StaticStory />;
+  // Phones get the calm static stack, not the 300vh pinned sequence — pinned
+  // scrollytelling tends to feel off on touch. Desktop only for the pinned view.
+  const [isNarrow, setIsNarrow] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const update = () => setIsNarrow(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
+  if (reduceMotion || isNarrow) return <StaticStory />;
 
   return (
     <section ref={ref} className="relative h-[300vh]" aria-label="How it works: ask, retrieve, cite">
