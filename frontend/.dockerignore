@@ -1,0 +1,18 @@
+# Keep the build context lean and secret-free.
+
+# Installed deps — the image runs `npm ci` fresh inside Linux; a host node_modules
+# is large and may contain platform-specific binaries.
+node_modules/
+
+# Previous build output — rebuilt inside the image; never ship a stale local build.
+.next/
+
+# Local env files — NEXT_PUBLIC_API_URL is passed as a build ARG (see Dockerfile),
+# and no other secrets belong in the frontend image.
+.env.local
+.env*.local
+
+# Editor / OS noise
+.vscode/
+.DS_Store
+npm-debug.log*

@@ -1,0 +1,27 @@
+# Keep the build context small and free of secrets/junk. Anything matched here is
+# never sent to the Docker daemon, so it can't end up in an image layer.
+
+# Local virtualenv — Linux container reinstalls deps fresh; a macOS venv is useless
+# inside it and is huge.
+venv/
+.venv/
+
+# Python bytecode / caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Secrets — config comes from compose env at runtime, never from a baked-in file.
+.env
+.env.*
+
+# RAGAS evaluation result outputs — eval-only artifacts, not needed to run the app.
+# (The harness *scripts* in evaluation/*.py are kept; only their JSON outputs are
+# excluded.)
+evaluation/*results*.json
+evaluation/final_results.json
+
+# Editor / OS noise
+.vscode/
+.DS_Store

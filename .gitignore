@@ -2,6 +2,7 @@
 .env
 .env.local
 .env.*.local
+.env.example
 
 # Frontend (Next.js)
 frontend/.next
@@ -32,7 +33,9 @@ backend/.mypy_cache
 *.swo
 *~
 .DS_Store
-.env.example
+# NOTE: .env.example is intentionally NOT ignored — it's the committed template
+# (no secrets). The real .env is ignored above.
+!.env.example
 
 # Database
 *.db
@@ -53,3 +56,5 @@ backend/venv/
 __pycache__/
 *.pyc
 backend/__pycache__
+
+docs/

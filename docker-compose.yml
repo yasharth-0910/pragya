@@ -1,0 +1,72 @@
+# Pragya — one-command local stack: Qdrant + FastAPI backend + Next.js frontend.
+# Neon Postgres is NOT here: it's a managed cloud DB the backend reaches over its
+# DATABASE_URL connection string. We never containerize it.
+#
+# (No top-level `version:` key — it's obsolete in modern Docker Compose v2 and
+# emits a warning if present.)
+
+services:
+  # ── Vector DB ──────────────────────────────────────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"   # REST/HTTP API (and the dashboard at /dashboard)
+      - "6334:6334"   # gRPC API
+    volumes:
+      # Named volume so the collection + vectors persist across restarts/rebuilds.
+      # Without this, every `compose down` would wipe the ingested documents.
+      - qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+
+  # ── Backend (FastAPI + RAG pipeline) ───────────────────────────────────────
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    # Load every var from the root .env (DATABASE_URL, GEMINI_*, SECRET_KEY, etc.).
+    env_file: .env
+    environment:
+      # OVERRIDE the QDRANT_URL from .env. Inside the compose network, containers
+      # reach each other by SERVICE NAME, not localhost: "localhost" from the
+      # backend container points at the backend itself, not Qdrant. Docker's
+      # internal DNS resolves "qdrant" to the qdrant container's IP.
+      # (In .env, QDRANT_URL=http://localhost:6333 is correct for running the
+      # backend on the host with no container — this just overrides it for compose.)
+      - QDRANT_URL=http://qdrant:6333
+    depends_on:
+      - qdrant
+    volumes:
+      # Persist the HuggingFace cache so the ~85MB cross-encoder reranker is
+      # downloaded ONCE, not on every container restart. Mount target matches
+      # HF_HOME set in backend/Dockerfile.
+      - model_cache:/root/.cache/huggingface
+    restart: unless-stopped
+
+  # ── Frontend (Next.js 15) ──────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # NEXT_PUBLIC_* vars are inlined into the browser bundle at BUILD time
+        # (see frontend/Dockerfile), so the API URL must be a BUILD ARG, not a
+        # runtime `environment:` entry — a runtime value would never reach the
+        # already-compiled client JS.
+        #
+        # Why http://localhost:8000 and NOT http://backend:8000:
+        # This URL is used by the user's BROWSER, which runs on the HOST machine,
+        # outside the compose network. The browser has no idea what "backend" is —
+        # that name only resolves via Docker's internal DNS, between containers.
+        # The browser reaches the backend through its host-published port mapping
+        # (8000:8000), i.e. localhost:8000. (Contrast the backend→qdrant case
+        # above, which IS container-to-container and so uses the service name.)
+        - NEXT_PUBLIC_API_URL=http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+# Named volumes — managed by Docker, survive `compose down` (use `down -v` to wipe).
+volumes:
+  qdrant_storage:   # Qdrant vectors + payloads
+  model_cache:      # HuggingFace / sentence-transformers reranker weights
