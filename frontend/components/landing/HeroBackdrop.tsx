@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import HeroFallback from "./HeroFallback";
 
@@ -16,6 +16,8 @@ const HeroCanvas = dynamic(() => import("./HeroCanvas"), { ssr: false });
 // allowed + actual WebGL support.
 export default function HeroBackdrop() {
   const [useCanvas, setUseCanvas] = useState(false);
+  const [active, setActive] = useState(true);
+  const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const finePointer = window.matchMedia("(pointer: fine)").matches; // real mouse
@@ -24,14 +26,27 @@ export default function HeroBackdrop() {
     setUseCanvas(finePointer && wide && !reduced && hasWebGL());
   }, []);
 
+  // Pause the canvas render loop while the hero is off-screen (perf): no GPU
+  // spent on particles nobody can see.
+  useEffect(() => {
+    if (!useCanvas) return;
+    const el = ref.current;
+    if (!el) return;
+    const io = new IntersectionObserver(([entry]) => setActive(entry.isIntersecting), {
+      threshold: 0,
+    });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [useCanvas]);
+
   return (
-    <div className="absolute inset-0 z-0" aria-hidden>
+    <div ref={ref} className="absolute inset-0 z-0" aria-hidden>
       {/* Fallback is always rendered as the base; on capable desktops the canvas
           fades in on top of it (both sit on the section's ink bg, so no flash). */}
       <HeroFallback />
       {useCanvas && (
         <div className="hero-canvas-in absolute inset-0">
-          <HeroCanvas />
+          <HeroCanvas active={active} />
         </div>
       )}
     </div>

@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { PointMaterial } from "@react-three/drei";
+import { PointMaterial, PerformanceMonitor } from "@react-three/drei";
 import * as THREE from "three";
 
 // The WebGL hero centrepiece (Phase 2). A field of slowly drifting points: most
@@ -110,24 +110,31 @@ function Field({ paperCount, amberCount }: { paperCount: number; amberCount: num
   );
 }
 
-export default function HeroCanvas({
-  paperCount = 2600,
-  amberCount = 22,
-}: {
-  paperCount?: number;
-  amberCount?: number;
-}) {
+export default function HeroCanvas({ active = true }: { active?: boolean }) {
+  // Adaptive starting DPR + particle count for weaker GPUs (Phase 5). Low-core
+  // machines start with fewer points; PerformanceMonitor drops DPR if FPS sags.
+  const lowEnd =
+    typeof navigator !== "undefined" &&
+    typeof navigator.hardwareConcurrency === "number" &&
+    navigator.hardwareConcurrency <= 4;
+  const [dpr, setDpr] = useState(lowEnd ? 1 : 1.5);
+  const paperCount = lowEnd ? 1500 : 2600;
+
   return (
     <Canvas
       // Transparent canvas: the section's ink background shows through, so the
       // look matches the CSS fallback and there's no flash on swap.
       gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
-      // Cap DPR — retina at full 3× would quadruple fragment work for no visible
-      // gain on points this small (Phase 5 tunes this adaptively).
-      dpr={[1, 1.75]}
+      dpr={dpr}
+      // Pause the render loop entirely once the hero scrolls out of view — no
+      // GPU spent animating particles nobody can see.
+      frameloop={active ? "always" : "never"}
       camera={{ position: [0, 0, 6], fov: 60 }}
     >
-      <Field paperCount={paperCount} amberCount={amberCount} />
+      {/* If sustained FPS drops, step the device pixel ratio down to 1 (biggest
+          cheap win — quarters the fragment work on retina). */}
+      <PerformanceMonitor onDecline={() => setDpr(1)} />
+      <Field paperCount={paperCount} amberCount={22} />
     </Canvas>
   );
 }
