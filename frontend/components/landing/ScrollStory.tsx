@@ -1,13 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import {
-  motion,
-  useScroll,
-  useTransform,
-  useReducedMotion,
-  type MotionValue,
-} from "motion/react";
+import { motion, useScroll, useTransform, type MotionValue } from "motion/react";
 
 // Phase 3 — the one pinned scrollytelling moment. A tall section (300vh) with a
 // sticky 100vh stage; as you scroll its progress (0→1) drives three stages of
@@ -38,25 +32,38 @@ const STAGES = [
 ];
 
 export default function ScrollStory() {
-  const reduceMotion = useReducedMotion();
+  // Decide pinned-vs-static only AFTER mount. The server (static prerender) and
+  // the first client render must match — both render the pinned view — or a
+  // reduced-motion / mobile client would hydrate a static tree against a pinned
+  // server tree (React #418 text mismatch). `staticMode` starts false, so the
+  // first render is always pinned; the effect switches it post-hydration.
+  //
+  // useScroll lives in PinnedStory (not here), so its target ref only exists
+  // when the pinned section is actually rendered (avoids "ref not hydrated").
+  const [staticMode, setStaticMode] = useState(false);
+  useEffect(() => {
+    const mqReduce = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const mqNarrow = window.matchMedia("(max-width: 767px)");
+    const decide = () => setStaticMode(mqReduce.matches || mqNarrow.matches);
+    decide();
+    mqReduce.addEventListener("change", decide);
+    mqNarrow.addEventListener("change", decide);
+    return () => {
+      mqReduce.removeEventListener("change", decide);
+      mqNarrow.removeEventListener("change", decide);
+    };
+  }, []);
+
+  if (staticMode) return <StaticStory />;
+  return <PinnedStory />;
+}
+
+function PinnedStory() {
   const ref = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({
     target: ref,
     offset: ["start start", "end end"],
   });
-
-  // Phones get the calm static stack, not the 300vh pinned sequence — pinned
-  // scrollytelling tends to feel off on touch. Desktop only for the pinned view.
-  const [isNarrow, setIsNarrow] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 767px)");
-    const update = () => setIsNarrow(mq.matches);
-    update();
-    mq.addEventListener("change", update);
-    return () => mq.removeEventListener("change", update);
-  }, []);
-
-  if (reduceMotion || isNarrow) return <StaticStory />;
 
   return (
     <section ref={ref} className="relative h-[300vh]" aria-label="How it works: ask, retrieve, cite">

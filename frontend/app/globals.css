@@ -230,36 +230,6 @@ body {
   z-index: -1;
 }
 
-/* ── Landing hero (Phase 2) ────────────────────────────────────────────────
-   Amber "signal" dots in the static fallback breathe slowly; the WebGL canvas
-   (capable desktops only) fades in over the fallback once it mounts. Both are
-   disabled under reduced motion below — and the canvas never mounts there. */
-@keyframes hero-dot-pulse {
-  0%, 100% {
-    opacity: 0.55;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-.hero-amber-dot {
-  animation: hero-dot-pulse 4.5s ease-in-out infinite;
-}
-
-@keyframes hero-canvas-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.hero-canvas-in {
-  animation: hero-canvas-in 1.2s ease both;
-}
-
 /* Link underline that draws in from the left on hover (Phase 4). currentColor
    so it inherits the link's colour in either nav state. */
 .link-underline {
@@ -307,10 +277,6 @@ body {
   }
   .interactive {
     transition: none;
-  }
-  .hero-amber-dot,
-  .hero-canvas-in {
-    animation: none;
   }
   .link-underline::after {
     transition: none;

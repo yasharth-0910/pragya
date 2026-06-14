@@ -8,6 +8,7 @@ import {
   useReducedMotion,
   useMotionValueEvent,
 } from "motion/react";
+import Reveal from "./Reveal";
 
 const QUERY = "how many casual leaves do i get?";
 
@@ -74,7 +75,13 @@ export default function TerminalDemo() {
   }, []);
 
   return (
-    <section ref={sectionRef} className="mx-auto mt-24 max-w-2xl sm:mt-28">
+    <section ref={sectionRef} className="mx-auto mt-28 max-w-2xl sm:mt-36">
+      {/* Kicker so the demo reads as a deliberate moment, not a floating card. */}
+      <Reveal>
+        <div className="mb-8 text-center font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
+          See it answer
+        </div>
+      </Reveal>
       <motion.div style={reduceMotion ? undefined : { y: parallaxY }}>
         <motion.div
           initial={reduceMotion ? false : { opacity: 0, y: 16 }}
@@ -82,7 +89,9 @@ export default function TerminalDemo() {
           viewport={{ once: true, amount: 0.3 }}
           onViewportEnter={startTyping}
           transition={{ duration: 0.7, ease: [0.22, 0.61, 0.36, 1] }}
-          className="overflow-hidden rounded-[12px] bg-terminal shadow-[0_0_0_6px_var(--terminal-ring)]"
+          // border-terminal-line lifts the card off the dark page in dark mode
+          // (where bg-main and bg-terminal are very close); the ring stays too.
+          className="overflow-hidden rounded-[12px] border border-terminal-line bg-terminal shadow-[0_0_0_6px_var(--terminal-ring)]"
         >
           {/* Title bar — three window dots (§5). */}
           <div className="flex items-center gap-2 border-b border-terminal-line px-4 py-3">
