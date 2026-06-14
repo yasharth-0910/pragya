@@ -260,6 +260,29 @@ body {
   animation: hero-canvas-in 1.2s ease both;
 }
 
+/* Link underline that draws in from the left on hover (Phase 4). currentColor
+   so it inherits the link's colour in either nav state. */
+.link-underline {
+  position: relative;
+}
+
+.link-underline::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -3px;
+  height: 1px;
+  width: 100%;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.35s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.link-underline:hover::after {
+  transform: scaleX(1);
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
@@ -288,5 +311,8 @@ body {
   .hero-amber-dot,
   .hero-canvas-in {
     animation: none;
+  }
+  .link-underline::after {
+    transition: none;
   }
 }

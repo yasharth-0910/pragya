@@ -1,5 +1,6 @@
 import SmoothScroll from "@/components/landing/SmoothScroll";
 import HeroBackdrop from "@/components/landing/HeroBackdrop";
+import HeroCursor from "@/components/landing/HeroCursor";
 import Nav from "@/components/landing/Nav";
 import Hero from "@/components/landing/Hero";
 import ScrollStory from "@/components/landing/ScrollStory";
@@ -14,15 +15,19 @@ import Footer from "@/components/landing/Footer";
 export default function Home() {
   return (
     <SmoothScroll>
+      {/* Fixed nav (transparent over hero → solid on scroll) + desktop hero
+          cursor ring both live above the page flow. */}
+      <Nav />
+      <HeroCursor />
+
       <main className="min-h-screen bg-main">
         {/* Hero stage — an always-dark ink surface (a constant, like the sidebar
-            and terminal), full viewport. The particle backdrop sits behind; nav
-            and hero content are layered in front in paper/amber. The dark→paper
-            edge at its base is the divider into the rest of the page. */}
-        <section className="relative flex min-h-svh flex-col overflow-hidden bg-ink">
+            and terminal), full viewport. The particle backdrop sits behind; the
+            hero content is layered in front in paper/amber. The dark→paper edge
+            at its base is the divider into the rest of the page. */}
+        <section id="hero-stage" className="relative flex min-h-svh flex-col overflow-hidden bg-ink">
           <HeroBackdrop />
           <div className="relative z-10 mx-auto flex w-full max-w-5xl flex-1 flex-col px-6 sm:px-8">
-            <Nav />
             <Hero />
           </div>
         </section>
