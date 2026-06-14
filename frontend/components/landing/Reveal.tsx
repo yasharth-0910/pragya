@@ -1,55 +1,46 @@
 "use client";
 
-import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import { type ReactNode } from "react";
+import { motion, useReducedMotion } from "motion/react";
 
-// Scroll-triggered reveal (replaces the old load-time .rise): the wrapper
-// starts hidden (opacity 0, translateY 14px — see .reveal in globals.css) and
-// gains .is-revealed the first time 15% of it enters the viewport. Pure
-// IntersectionObserver + CSS transition, no animation library (DESIGN.md §6).
+// Scroll-reveal primitive (Phase 1) — now Framer Motion instead of the old
+// IntersectionObserver + `.reveal` CSS class. Same feel as before: each element
+// starts 14px low and faded, then rises into place the first time it scrolls
+// into view. `delay` (ms) staggers siblings — Hero passes 80 / 200 / 320, the
+// feature file-list passes i*120, etc. The public API is unchanged, so every
+// existing call site (Nav, Hero, Footer, StickyFeatures) keeps working as-is.
 //
-// Note: keep themed backgrounds/borders OFF this wrapper — .reveal declares
-// its own `transition`, which would override the global theme crossfade.
+// IMPORTANT: this renders a plain motion.div WITHOUT the `.reveal` class. That
+// class still lives in globals.css (TerminalDemo drives it directly for now),
+// but if it landed on this element its 0.7s CSS transition would fight Framer
+// Motion's per-frame inline animation → lag. FM owns opacity/transform here.
 type RevealProps = {
   children: ReactNode;
   className?: string;
-  // Stagger between sibling reveals, in ms (~120ms steps per DESIGN.md §6).
+  // Stagger between sibling reveals, in ms (~120ms steps, DESIGN.md §6).
   delay?: number;
 };
 
 export default function Reveal({ children, className = "", delay = 0 }: RevealProps) {
-  const ref = useRef<HTMLDivElement>(null);
+  const reduceMotion = useReducedMotion();
 
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-
-    // Reduced motion: jump straight to the settled state (DESIGN.md §6).
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      el.classList.add("is-revealed");
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          el.classList.add("is-revealed");
-          observer.disconnect(); // reveal once, never re-hide on scroll-up
-        }
-      },
-      { threshold: 0.15 }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
+  // Reduced motion: render the settled final state, no animation at all.
+  if (reduceMotion) {
+    return <div className={className}>{children}</div>;
+  }
 
   return (
-    <div
-      ref={ref}
-      className={`reveal ${className}`}
-      // CSS var so the stagger lives in CSS (transition-delay), not JS timers.
-      style={{ "--reveal-delay": `${delay}ms` } as CSSProperties}
+    <motion.div
+      className={className}
+      initial={{ opacity: 0, y: 14 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      // once: reveal a single time, never re-hide on scroll-up.
+      // amount 0.15 == the old IntersectionObserver threshold of 0.15.
+      viewport={{ once: true, amount: 0.15 }}
+      // 0.7s + cubic-bezier(.22,.61,.36,1): identical curve to the old .reveal.
+      transition={{ duration: 0.7, ease: [0.22, 0.61, 0.36, 1], delay: delay / 1000 }}
     >
       {children}
-    </div>
+    </motion.div>
   );
 }

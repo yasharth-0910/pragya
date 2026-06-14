@@ -44,9 +44,13 @@ function ThemeToggle() {
   return (
     <button
       type="button"
-      aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+      // Gate the label on `mounted` too (not just the icon): before mount the
+      // theme is unknown, so server and client must render the SAME label or
+      // React flags a hydration mismatch (server assumes light → "dark", client
+      // resolves dark → "light"). Generic label until we know the real theme.
+      aria-label={mounted ? (isDark ? "Switch to light mode" : "Switch to dark mode") : "Toggle theme"}
       onClick={() => setTheme(isDark ? "light" : "dark")}
-      className="interactive flex h-9 w-9 items-center justify-center rounded-full border border-input text-muted hover:text-primary active:scale-[0.98]"
+      className="interactive flex h-9 w-9 items-center justify-center rounded-full border border-paper/20 text-paper/70 hover:text-paper active:scale-[0.98]"
     >
       {mounted ? (isDark ? <SunIcon /> : <MoonIcon />) : <span className="h-4 w-4" />}
     </button>
@@ -58,21 +62,21 @@ export default function Nav() {
     // Nav sits at the top so its Reveal fires immediately on load — same
     // entrance as before, now consistent with the scroll-reveal system.
     <Reveal>
-      <nav className="flex items-center justify-between">
-        <a href="#" className="font-serif text-[22px] tracking-[-0.02em] text-primary">
+      <nav className="flex items-center justify-between py-6">
+        <a href="#" className="font-serif text-[22px] tracking-[-0.02em] text-paper">
           Pragya
         </a>
 
         <div className="flex items-center gap-5 sm:gap-7">
           <a
             href="#how-it-works"
-            className="interactive hidden font-sans text-[14px] text-muted hover:text-primary sm:inline"
+            className="interactive hidden font-sans text-[14px] text-paper/65 hover:text-paper sm:inline"
           >
             How it works
           </a>
           <a
             href="#security"
-            className="interactive hidden font-sans text-[14px] text-muted hover:text-primary sm:inline"
+            className="interactive hidden font-sans text-[14px] text-paper/65 hover:text-paper sm:inline"
           >
             Security
           </a>
@@ -81,7 +85,7 @@ export default function Nav() {
 
           <a
             href="/login"
-            className="interactive rounded-full border border-input px-5 py-2 font-sans text-[14px] text-primary hover:bg-subtle active:scale-[0.98]"
+            className="interactive rounded-full border border-paper/20 px-5 py-2 font-sans text-[14px] text-paper hover:bg-paper/10 active:scale-[0.98]"
           >
             Sign in
           </a>
