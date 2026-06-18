@@ -1,0 +1,1983 @@
+%==============================================================================
+% PRAGYA — Master Technical Report
+% A comprehensive technical reference for the Pragya Enterprise RAG Platform.
+%
+% Compile with a standard TeX Live install (pdflatex), TWICE for the table of
+% contents / cross-references / list of figures:
+%     pdflatex PRAGYA_TECHNICAL_REPORT.tex
+%     pdflatex PRAGYA_TECHNICAL_REPORT.tex
+% (Overleaf: just press Recompile; it runs the passes automatically.)
+%
+% All diagrams are native TikZ and all charts native pgfplots — no external
+% image files are required. Every number, formula, path, and identifier is
+% grounded in the Pragya codebase and backend/evaluation/final_results.json.
+%==============================================================================
+\documentclass[11pt,a4paper,oneside]{report}
+
+% ── Encoding & fonts (pdflatex-compatible; no fontspec) ──────────────────────
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{textcomp}
+
+% ── Page geometry & layout ───────────────────────────────────────────────────
+\usepackage[a4paper,margin=2.4cm,headheight=14pt]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+\usepackage{parskip}
+
+% ── Math ─────────────────────────────────────────────────────────────────────
+\usepackage{amsmath,amssymb,amsfonts}
+
+% ── Tables ───────────────────────────────────────────────────────────────────
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{ragged2e}
+\newcolumntype{L}[1]{>{\RaggedRight\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\Centering\arraybackslash}p{#1}}
+
+% ── Color (ink–paper–amber design palette, reused in figures) ────────────────
+\usepackage{xcolor}
+\definecolor{ink}{HTML}{211E19}
+\definecolor{ink2}{HTML}{2C2820}
+\definecolor{paperbg}{HTML}{F5F1E8}
+\definecolor{amber}{HTML}{E8C87E}
+\definecolor{amberdark}{HTML}{A8842A}
+\definecolor{muted}{HTML}{6F6657}
+\definecolor{softline}{HTML}{C9BFA8}
+
+% ── Graphics, diagrams, charts ───────────────────────────────────────────────
+\usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,shapes.misc,calc,fit,backgrounds,decorations.pathreplacing}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepgfplotslibrary{statistics}
+
+% ── Code listings ────────────────────────────────────────────────────────────
+\usepackage{listings}
+\lstdefinestyle{code}{
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{ink}\bfseries,
+  commentstyle=\color{muted}\itshape,
+  stringstyle=\color{amberdark},
+  numbers=left, numberstyle=\tiny\color{muted}, numbersep=8pt,
+  breaklines=true, breakatwhitespace=false,
+  frame=single, rulecolor=\color{softline},
+  backgroundcolor=\color{paperbg!45},
+  showstringspaces=false, columns=fullflexible, keepspaces=true,
+  tabsize=2, captionpos=b, xleftmargin=10pt, framexleftmargin=10pt,
+}
+\lstset{style=code}
+\lstdefinelanguage{none}{keywords={}}
+
+% ── Callout boxes (Observation / Divergence / Honesty) ───────────────────────
+\usepackage[most]{tcolorbox}
+\newtcolorbox{observation}{colback=amber!10,colframe=amberdark,boxrule=0.5pt,
+  arc=2pt,left=6pt,right=6pt,top=4pt,bottom=4pt,
+  fonttitle=\bfseries,title=Observation}
+\newtcolorbox{divergence}{colback=paperbg!60,colframe=ink,boxrule=0.5pt,
+  arc=2pt,left=6pt,right=6pt,top=4pt,bottom=4pt,
+  fonttitle=\bfseries,title=Specification divergence}
+\newtcolorbox{keyidea}{colback=ink!5,colframe=ink2,boxrule=0.5pt,
+  arc=2pt,left=6pt,right=6pt,top=4pt,bottom=4pt}
+
+% ── Headers / footers ────────────────────────────────────────────────────────
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\itshape Pragya — Master Technical Report}
+\fancyhead[R]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+
+% ── Section styling ──────────────────────────────────────────────────────────
+\usepackage{titlesec}
+\titleformat{\chapter}[display]
+  {\normalfont\huge\bfseries\color{ink}}
+  {\filright\Large\color{amberdark}Chapter \thechapter}{8pt}{\Huge}
+\titlespacing*{\chapter}{0pt}{0pt}{20pt}
+
+% ── Hyperlinks (load last) ───────────────────────────────────────────────────
+\usepackage[hidelinks]{hyperref}
+\hypersetup{
+  colorlinks=true, linkcolor=amberdark, citecolor=amberdark,
+  urlcolor=amberdark, pdftitle={Pragya — Master Technical Report},
+  pdfauthor={Yasharth Singh}, bookmarksnumbered=true,
+}
+
+% ── Shared TikZ styles for diagrams ──────────────────────────────────────────
+\tikzset{
+  box/.style={draw=ink, rounded corners=2pt, fill=paperbg, align=center,
+    font=\small, inner sep=5pt, minimum height=9mm, minimum width=24mm},
+  accentbox/.style={draw=amberdark, rounded corners=2pt, fill=amber!20,
+    align=center, font=\small, inner sep=5pt, minimum height=9mm, minimum width=24mm},
+  db/.style={cylinder, shape border rotate=90, aspect=0.22, draw=ink,
+    fill=amber!22, align=center, font=\footnotesize, inner sep=4pt,
+    minimum height=14mm, minimum width=22mm},
+  decision/.style={diamond, aspect=2, draw=ink, fill=paperbg, align=center,
+    font=\footnotesize, inner sep=1pt, minimum width=22mm},
+  group/.style={draw=ink!35, dashed, rounded corners=4pt, inner sep=9pt},
+  arr/.style={-{Latex[length=2.2mm]}, ink, semithick},
+  darr/.style={-{Latex[length=2.2mm]}, ink!55, semithick, dashed},
+  lbl/.style={font=\scriptsize\itshape, color=muted},
+}
+
+\newcommand{\code}[1]{\texttt{#1}}
+
+%==============================================================================
+\begin{document}
+%==============================================================================
+
+% ── TITLE PAGE ───────────────────────────────────────────────────────────────
+\begin{titlepage}
+\centering
+\vspace*{1.2cm}
+
+{\color{ink}\rule{\linewidth}{1.2pt}}\\[6pt]
+{\Huge\bfseries\color{ink} PRAGYA}\\[6pt]
+{\Large\color{amberdark}\itshape प्रज्ञा — ``Wisdom''}\\[10pt]
+{\LARGE\bfseries\color{ink} Master Technical Report}\\[6pt]
+{\large An Enterprise Retrieval-Augmented Generation\\ Knowledge Platform}\\[8pt]
+{\color{ink}\rule{\linewidth}{1.2pt}}
+
+\vfill
+
+\begin{tabular}{rl}
+\toprule
+\textbf{Project} & Pragya — Enterprise RAG Knowledge Platform\\
+\textbf{Organization} & HCL Infosystems (Internship Technical Project)\\
+\textbf{Author} & Yasharth Singh\\
+\textbf{Timeline} & 6-week internship build\\
+\textbf{Backend} & FastAPI (async) $\cdot$ Neon PostgreSQL $\cdot$ Qdrant $\cdot$ Gemini\\
+\textbf{Frontend} & Next.js 15 (App Router) $\cdot$ Tailwind CSS v4\\
+\textbf{Evaluation} & RAGAS (faithfulness + context precision)\\
+\textbf{Document version} & 2.0 (LaTeX master edition)\\
+\bottomrule
+\end{tabular}
+
+\vfill
+{\small\color{muted} Every technical claim, number, formula, file path, and identifier in
+this document is grounded in the real source code and the committed evaluation results.
+Where the implementation diverges from the original specification, the divergence is
+flagged explicitly.}\\[10pt]
+{\itshape\color{amberdark} Every answer, with its source.}
+\end{titlepage}
+
+% ── ABSTRACT ─────────────────────────────────────────────────────────────────
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+\markboth{Abstract}{Abstract}
+
+Pragya is an internal AI knowledge assistant for an organization. Employees ask questions
+in natural language---\emph{``How many casual leaves do I get?''}---and receive answers
+grounded in their department's own documents, with a citation to the exact source file and
+page behind every factual claim. It is not a generic chatbot: it is a purpose-built
+\textbf{Retrieval-Augmented Generation (RAG)} platform whose design choices maximize answer
+faithfulness and keep each department's documents walled off from the others.
+
+Three properties define the system. \textbf{Hybrid retrieval} combines dense semantic search
+(vector embeddings) with sparse keyword search (a BM25-style signal), fused by Reciprocal
+Rank Fusion, rather than relying on embeddings alone. \textbf{Citation grounding} constrains
+the language model to answer only from retrieved context and to cite each claim as
+\code{[Source: N]}, resolved back to a real filename and page. \textbf{Department-level
+access control} is enforced inside the vector-database query itself, so a forbidden document
+is never even a retrieval candidate.
+
+Beyond the product, Pragya carries a research contribution: a controlled comparison of three
+retrieval configurations---dense, hybrid, and hybrid with cross-encoder reranking---over one
+fixed corpus and thirty ground-truth questions, scored with RAGAS using two independent judge
+models so the generator never grades its own output. The results, reported in full, are
+instructive: the hybrid configuration scores highest on average, and adding a reranker
+\emph{degrades} faithfulness on this corpus---a negative result reported honestly. This
+report documents the entire system end to end: architecture, data model, ingestion and
+retrieval pipelines with full mathematics, generation and access control, every feature
+module, the frontend, the evaluation, and the engineering journey, each illustrated with
+diagrams and data figures.
+
+% ── FRONT MATTER ─────────────────────────────────────────────────────────────
+\tableofcontents
+\listoffigures
+\listoftables
+
+%==============================================================================
+\chapter{System Overview}
+\label{ch:overview}
+%==============================================================================
+
+\section{What Pragya Is}
+Pragya (प्रज्ञा, Sanskrit for \emph{wisdom}) is an \textbf{Enterprise RAG Knowledge Platform}:
+a web application that lets the employees of an organization query their internal documents in
+natural language and receive grounded, cited answers. Architecturally it is two cooperating
+systems:
+
+\begin{itemize}
+  \item A \textbf{Python/FastAPI backend} handling authentication, document ingestion, vector
+  search, answer generation, and analytics. It is fully asynchronous, organized into a strict
+  three-layer structure (routing $\rightarrow$ services $\rightarrow$ data), and backed by a
+  cloud PostgreSQL database (Neon) for relational data and a Qdrant vector database for
+  semantic search.
+  \item A \textbf{Next.js 15 frontend} providing the chat interface, document management,
+  conversation history, the meeting assistant, and the admin dashboard. It never touches a
+  database directly; it communicates only through the backend's HTTP API.
+\end{itemize}
+
+The system was built as a six-week internship project at HCL Infosystems, following a
+deliberate module-by-module build order (foundation $\rightarrow$ auth $\rightarrow$ ingestion
+$\rightarrow$ RAG chat $\rightarrow$ document intelligence $\rightarrow$ conversation history
+$\rightarrow$ analytics $\rightarrow$ meeting assistant), each module tested and committed
+before the next began.
+
+\section{The Problem It Solves}
+Organizational knowledge has three chronic failure modes that Pragya addresses simultaneously:
+
+\begin{enumerate}
+  \item \textbf{Knowledge is locked in documents nobody fully reads.} Policies and handbooks
+  are long; the answer to a specific question is one sentence buried on page 14.
+  \item \textbf{Generic AI assistants are confidently wrong about company specifics} and cannot
+  cite a source---the \emph{hallucination} problem.
+  \item \textbf{Sensitive documents must not leak across departments.} Finance, Legal, and HR
+  hold material other departments should not see.
+\end{enumerate}
+
+Pragya grounds answers in the actual corpus (addressing 1 and 2), enforces the hallucination
+guard at the prompt level while surfacing citations for verification (2), and enforces
+per-department access control at the vector-database query layer so the rule cannot be bypassed
+by application logic (3).
+
+\section{Users \& Roles}
+Pragya recognizes three roles, stored on \code{users.role} and carried in every JWT. The role is
+a plain string (not a database enum) so new roles need no schema migration.
+
+\begin{table}[h]
+\centering
+\caption{User roles and their capabilities.}
+\label{tab:roles}
+\begin{tabularx}{\linewidth}{l L{3.2cm} X}
+\toprule
+\textbf{Role} & \textbf{Who} & \textbf{Capabilities}\\
+\midrule
+\code{admin} & Department / org administrators & Everything a user can, plus: manage departments,
+change user roles, upload \emph{company-wide} documents, access any department's
+department-level documents, and view analytics. The first user to register is auto-promoted to
+\code{admin}.\\
+\code{user} & Regular employees & Ask questions, upload documents (own department or personal),
+document intelligence, meeting assistant, document search, own conversation history.\\
+\code{viewer} & Read-oriented accounts & A lighter role; gated like \code{user} for queries.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Every user belongs to at most one department (\code{users.department\_id}, nullable). The
+department is the backbone of access control: it determines which documents a user's queries
+can reach. A user with no department cannot query documents at all, and the chat endpoint
+rejects such a request.
+
+\section{The Three Defining Features}
+\begin{description}
+  \item[Hybrid retrieval (dense + sparse).] Dense semantic retrieval is excellent at meaning
+  but blind to exact tokens; an abbreviation like ``CL'' (casual leave) has no useful embedding
+  neighborhood. Pragya runs dense and sparse keyword retrieval in parallel and fuses them with
+  Reciprocal Rank Fusion (Chapter~\ref{ch:retrieval}).
+  \item[Citation grounding.] The model answers only from provided context, cites every claim as
+  \code{[Source: N]}, and returns a fixed refusal if the answer is absent. Citations are
+  enforceable and checkable (Chapter~\ref{ch:generation}).
+  \item[Vector-layer access control.] A visibility filter is built into every Qdrant query, so a
+  forbidden document is never a candidate---access control is not an afterthought applied to
+  results (Chapter~\ref{ch:generation}).
+\end{description}
+
+\section{Technology Stack \& Justification}
+\label{sec:stack}
+Every choice was made deliberately and recorded in configuration rather than hardcoded.
+Table~\ref{tab:stack} summarizes the stack (versions from \code{requirements.txt} and
+\code{package.json}); the prose justifies the non-obvious choices.
+
+\begin{table}[h]
+\centering
+\caption{The Pragya technology stack.}
+\label{tab:stack}
+\small
+\begin{tabularx}{\linewidth}{L{2.6cm} L{4.2cm} X}
+\toprule
+\textbf{Layer} & \textbf{Choice (version)} & \textbf{Why}\\
+\midrule
+API framework & FastAPI (async) \code{\textasciitilde0.115} & Native async, automatic OpenAPI \code{/docs}, Pydantic validation.\\
+Runtime & Python 3.11 & Mature AI/ML ecosystem; async maturity.\\
+ASGI server & Uvicorn \code{[standard]} \code{\textasciitilde0.34} & uvloop + httptools for speed.\\
+ORM & SQLAlchemy \code{[asyncio]} \code{\textasciitilde2.0} & Async ORM; logic in Python.\\
+Migrations & Alembic \code{\textasciitilde1.14} & Autogenerated from models.\\
+Relational DB & Neon (serverless PostgreSQL) & Managed Postgres, scales to zero, SSL-required.\\
+Driver & asyncpg \code{\textasciitilde0.30} & Fast async Postgres driver.\\
+Vector DB & Qdrant (client \code{\textasciitilde1.12}) & Native hybrid search: named dense + sparse vectors.\\
+Embeddings & Gemini \code{gemini-embedding-001} @ 768d & Matryoshka truncation 3072$\to$768.\\
+Chat LLM & Gemini Flash (from config) & Fast, free-tier-friendly; model string in \code{.env}.\\
+Reranker & \code{ms-marco-MiniLM-L-6-v2} & Joint query-document scoring; local ($\sim$85\,MB).\\
+PDF parsing & PyMuPDF (\code{fitz}) \code{\textasciitilde1.25} & Keeps page numbers (citations need them).\\
+DOCX / PPTX & python-docx / python-pptx & Native Office parsing.\\
+Auth & python-jose + passlib(bcrypt) & Email + password only; bcrypt pinned \code{4.0.1}.\\
+Config & pydantic-settings \code{\textasciitilde2.7} & Typed settings from \code{.env}.\\
+Frontend & Next.js 15 + React 19 & Server components, file routing.\\
+Styling & Tailwind CSS v4 & Token-driven utility CSS.\\
+Client cache & SWR \code{\textasciicircum2.4} & Cache-first reads, background revalidation.\\
+Charts & Recharts \code{\textasciicircum3.8} & Analytics dashboard visualizations.\\
+Evaluation & RAGAS \code{0.2.0} & RAG metrics (faithfulness, context precision).\\
+Judges & Groq \code{llama-3.1-8b-instant} + Ollama \code{qwen2.5:7b} & Independent of the generator.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\paragraph{Why FastAPI + async everywhere.} RAG is I/O-bound: one question waits on embedding
+calls, vector search, the relational DB, and a streaming LLM response. An async framework
+serves other requests during those waits instead of blocking a thread each. FastAPI's automatic
+\code{/docs} made every module testable the moment it was built.
+
+\paragraph{Why Qdrant specifically.} The defining feature is \emph{hybrid} retrieval, and Qdrant
+supports \textbf{named vectors}: a single collection holds a dense \emph{and} a sparse vector per
+point, queried by name. Hybrid retrieval is thus a first-class capability of the store. Qdrant
+also supports indexed payload filtering---exactly what the department/visibility access control
+needs.
+
+\paragraph{Why Gemini embeddings at 768 dimensions.} \code{gemini-embedding-001} natively produces
+3072-dimensional vectors. Pragya truncates them to 768 using \emph{Matryoshka} representation (a
+prefix of the vector is itself a valid embedding), giving a smaller, faster index at negligible
+quality cost. Cosine distance is scale-invariant, so no re-normalization is needed.
+
+\paragraph{Why a cross-encoder reranker.} Dense and sparse retrieval are \emph{bi-encoders}---query
+and document embedded independently. A \emph{cross-encoder} feeds the pair through a transformer
+together, relating every query token to every document token---far more accurate but costlier, so
+it runs only on the $\sim$40 fused candidates. Whether it \emph{helps} on this corpus is an
+empirical question the evaluation answers (Chapter~\ref{ch:eval}).
+
+\begin{divergence}
+\code{CLAUDE.md} specifies ``Gemini Flash --- model string from config'' and does not hardcode a
+model. The committed evaluation results record the generator used for the benchmark as
+\code{gemini-3.1-flash-lite}. This report uses that real recorded value wherever a concrete model
+name is needed, and treats the configurable \code{GEMINI\_CHAT\_MODEL} as the source of truth in
+the running system.
+\end{divergence}
+
+\section{Top-Level System Architecture}
+At the highest level Pragya is a browser client talking to a FastAPI backend, which orchestrates
+three external systems---Neon PostgreSQL (relational data), Qdrant (vector search with access
+filtering), and Gemini (embeddings and chat)---plus a local cross-encoder for reranking
+(Figure~\ref{fig:arch}).
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=7mm and 14mm]
+% Client
+\node[accentbox, minimum width=46mm] (ui) {Browser --- Next.js 15 frontend\\\footnotesize Chat $\cdot$ Documents $\cdot$ Conversations\\\footnotesize Meeting $\cdot$ Admin $\cdot$ Analytics};
+% Backend layers
+\node[box, below=12mm of ui, minimum width=30mm] (router) {\code{routers/}\\\scriptsize HTTP only};
+\node[box, below=of router, minimum width=30mm] (svc) {\code{services/}\\\scriptsize business logic};
+\node[box, below=of svc, minimum width=30mm] (model) {\code{models/}\\\scriptsize ORM / data access};
+\node[box, right=20mm of router, minimum width=26mm] (rbac) {\code{middleware/rbac}\\\scriptsize JWT + role gates};
+% External
+\node[db, below left=14mm and 2mm of model] (pg) {Neon\\PostgreSQL};
+\node[db, below=16mm of model] (qd) {Qdrant\\dense+sparse};
+\node[box, below right=14mm and 2mm of model, minimum width=24mm] (gem) {Gemini APIs\\\scriptsize embed + chat (SSE)};
+\node[box, right=14mm of svc, minimum width=26mm] (rr) {Cross-encoder\\\scriptsize reranker (in-proc)};
+% Edges
+\draw[arr] (ui) -- node[lbl,right]{HTTPS/JSON, Bearer JWT} (router);
+\draw[darr] (router) -- node[lbl,left]{SSE stream} (ui);
+\draw[arr] (router) -- (svc);
+\draw[arr] (svc) -- (model);
+\draw[darr] (router) -- (rbac);
+\draw[arr] (model) -- (pg);
+\draw[arr] (svc) to[bend left=8] node[lbl,right]{RBAC-filtered search} (qd);
+\draw[arr] (svc.south) to[bend right=12] (gem.north);
+\draw[arr] (svc) -- (rr);
+\end{tikzpicture}
+\caption{Top-level system architecture: client $\rightarrow$ three-layer backend $\rightarrow$
+Neon / Qdrant / Gemini, with the RBAC middleware gating requests and a local reranker.}
+\label{fig:arch}
+\end{figure}
+
+A request enters through a router (HTTP only: validate, authenticate via the RBAC middleware,
+call a service, return). Services hold all logic; the data layer is the only thing touching
+PostgreSQL. Vector search, embedding, generation, and reranking are service-layer concerns
+reaching out to Qdrant, Gemini, and the local reranker. The rule that the access filter lives
+\emph{inside} the Qdrant query is the structural backbone the rest of this report details.
+
+%==============================================================================
+\chapter{Data Model \& Ingestion Pipeline}
+\label{ch:data}
+%==============================================================================
+
+This chapter describes how Pragya stores knowledge---both relational records in PostgreSQL
+and vectors in Qdrant---and how a raw uploaded file becomes searchable knowledge.
+
+\section{Schema Conventions}
+All relational data lives in Neon PostgreSQL, modeled with SQLAlchemy's async ORM in
+\code{backend/models/}. Three conventions are enforced project-wide:
+
+\begin{itemize}
+  \item \textbf{UUID primary keys}, generated application-side via \code{uuid.uuid4}. IDs never
+  depend on a DB sequence and are unguessable.
+  \item \textbf{Timezone-aware timestamps} (\code{TIMESTAMPTZ}). A shared \code{\_utcnow()} returns
+  \code{datetime.now(timezone.utc)}. (An early build used naive timestamps; a migration converted
+  all of them---see Chapter~\ref{ch:journey}.)
+  \item \textbf{Status / role fields are plain strings, not enums}, so new states
+  (\code{processing}/\code{ready}/\code{failed}) or roles need no migration.
+\end{itemize}
+
+\section{The Seven Tables}
+The seven tables divide into three groups: identity \& access (\code{departments},
+\code{users}), knowledge (\code{documents}, \code{document\_chunks}), and conversation \&
+analytics (\code{chat\_sessions}, \code{chat\_messages}, \code{query\_logs}).
+Table~\ref{tab:schema} lists every column of every table.
+
+\begin{small}
+\begin{longtable}{L{3.1cm} L{2.4cm} L{2.8cm} X}
+\caption{Complete relational schema (all seven tables, every column).}
+\label{tab:schema}\\
+\toprule
+\textbf{Column} & \textbf{Type} & \textbf{Constraints} & \textbf{Purpose}\\
+\midrule
+\endfirsthead
+\multicolumn{4}{l}{\small\itshape Table~\ref{tab:schema} continued}\\
+\toprule
+\textbf{Column} & \textbf{Type} & \textbf{Constraints} & \textbf{Purpose}\\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\multicolumn{4}{l}{\cellcolor{amber!18}\textbf{departments} --- access-control backbone}\\
+\code{id} & UUID & PK, \code{uuid4} & Surrogate key.\\
+\code{name} & VARCHAR(100) & unique, not null & E.g. ``Human Resources''.\\
+\code{description} & VARCHAR(500) & nullable & Admin-UI blurb.\\
+\code{created\_at} & TIMESTAMPTZ & not null & Row creation.\\
+\addlinespace
+\multicolumn{4}{l}{\cellcolor{amber!18}\textbf{users} --- identity and role}\\
+\code{id} & UUID & PK & Surrogate key.\\
+\code{name} & VARCHAR(200) & not null & Display name.\\
+\code{email} & VARCHAR(320) & unique, not null & Login id; 320 = RFC 5321 max.\\
+\code{password\_hash} & VARCHAR(255) & not null & bcrypt digest --- never plaintext.\\
+\code{department\_id} & UUID & FK, \emph{nullable} & Nullable for a global admin.\\
+\code{role} & VARCHAR(20) & not null, def. \code{user} & \code{admin}/\code{user}/\code{viewer}.\\
+\code{is\_active} & BOOLEAN & not null, def. true & Soft-delete flag.\\
+\code{created\_at}, \code{updated\_at} & TIMESTAMPTZ & not null & \code{updated\_at} via \code{onupdate}.\\
+\addlinespace
+\multicolumn{4}{l}{\cellcolor{amber!18}\textbf{documents} --- one uploaded file}\\
+\code{id} & UUID & PK & Surrogate key.\\
+\code{filename} & VARCHAR(500) & not null & Sanitized internal name.\\
+\code{original\_filename} & VARCHAR(500) & not null & Verbatim uploaded name.\\
+\code{department\_id} & UUID & FK, not null & Owning department (RBAC).\\
+\code{visibility} & VARCHAR(20) & not null, server-def. & \code{company}/\code{department}/\code{personal}.\\
+\code{uploaded\_by} & UUID & FK, not null & Author; drives \code{personal} tier.\\
+\code{status} & VARCHAR(20) & not null & \code{processing}/\code{ready}/\code{failed}.\\
+\code{file\_size} & INTEGER & nullable & Bytes.\\
+\code{page\_count} & INTEGER & nullable & Null for DOCX.\\
+\code{chunk\_count} & INTEGER & nullable & Number of child chunks.\\
+\code{summary} & TEXT & nullable & LLM summary.\\
+\code{key\_points} & JSONB & nullable & List of strings.\\
+\code{action\_items} & JSONB & nullable & List of \code{\{text,owner,deadline\}}.\\
+\code{document\_type} & VARCHAR(20) & nullable & \code{policy}/\code{meeting\_notes}/\code{technical}/\code{other}.\\
+\code{word\_count} & INTEGER & nullable & Computed in Python, not from LLM.\\
+\code{error\_message} & TEXT & nullable & Set only when \code{failed}.\\
+\code{created\_at}, \code{updated\_at} & TIMESTAMPTZ & not null & \\
+\addlinespace
+\multicolumn{4}{l}{\cellcolor{amber!18}\textbf{document\_chunks} --- hierarchical pieces}\\
+\code{id} & UUID & PK & Surrogate key.\\
+\code{document\_id} & UUID & FK \code{ON DELETE CASCADE} & No orphan chunks.\\
+\code{chunk\_index} & INTEGER & not null & 0-based position.\\
+\code{child\_text} & TEXT & not null & $\sim$256-token unit: embedded + retrieved.\\
+\code{parent\_text} & TEXT & not null & $\sim$1024-token unit: sent to the LLM.\\
+\code{page\_number} & INTEGER & nullable & Source page; null for DOCX.\\
+\code{qdrant\_point\_id} & VARCHAR(36) & nullable & Links row to its Qdrant vector.\\
+\code{created\_at} & TIMESTAMPTZ & not null & \\
+\addlinespace
+\multicolumn{4}{l}{\cellcolor{amber!18}\textbf{chat\_sessions} --- a conversation}\\
+\code{id} & UUID & PK & Surrogate key.\\
+\code{user\_id} & UUID & FK, not null & Owner.\\
+\code{title} & VARCHAR(500) & nullable & LLM-auto-generated from first question.\\
+\code{created\_at}, \code{updated\_at} & TIMESTAMPTZ & not null & \code{updated\_at} sorts the sidebar.\\
+\addlinespace
+\multicolumn{4}{l}{\cellcolor{amber!18}\textbf{chat\_messages} --- one turn}\\
+\code{id} & UUID & PK & Surrogate key.\\
+\code{session\_id} & UUID & FK \code{ON DELETE CASCADE} & Removed with its session.\\
+\code{role} & VARCHAR(20) & not null & \code{user}/\code{assistant}.\\
+\code{content} & TEXT & not null & Message text.\\
+\code{sources} & JSONB & nullable & \code{\{filename,page,citation\_number\}} list.\\
+\code{created\_at} & TIMESTAMPTZ & not null & \\
+\addlinespace
+\multicolumn{4}{l}{\cellcolor{amber!18}\textbf{query\_logs} --- analytics \& research record (denormalized)}\\
+\code{id} & UUID & PK & Surrogate key.\\
+\code{session\_id} & UUID & FK \code{ON DELETE SET NULL} & Survives session deletion.\\
+\code{user\_id} & UUID & FK, not null & Who asked.\\
+\code{department\_id} & UUID & FK, not null & Denormalized for group-by.\\
+\code{query\_text} & TEXT & not null & Raw question.\\
+\code{retrieval\_method} & VARCHAR(20) & nullable & \code{dense}/\code{hybrid}/\code{hybrid\_rerank}.\\
+\code{faithfulness\_score} & FLOAT & nullable & RAGAS (offline eval).\\
+\code{answer\_relevancy\_score} & FLOAT & nullable & RAGAS (reserved).\\
+\code{context\_precision\_score} & FLOAT & nullable & RAGAS.\\
+\code{answered} & BOOLEAN & not null, def. true & \code{false} on no-info refusal.\\
+\code{response\_time\_ms} & INTEGER & nullable & End-to-end latency.\\
+\code{created\_at} & TIMESTAMPTZ & not null & \\
+\end{longtable}
+\end{small}
+
+\begin{keyidea}
+\textbf{Three deliberate cascade choices.} \code{document\_chunks} and \code{chat\_messages} use
+\textbf{CASCADE} (the child is meaningless without the parent); \code{query\_logs.session\_id}
+uses \textbf{SET NULL} (the analytics record must outlive its conversation); and \code{users} is
+never deleted---deactivation via \code{is\_active} preserves authorship of documents and queries.
+\end{keyidea}
+
+\section{Entity-Relationship Diagram}
+Figure~\ref{fig:er} shows the seven entities, their key columns, and relationships labeled with
+cardinality and on-delete behavior.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[every node/.style={font=\scriptsize},
+  entity/.style={draw=ink, rounded corners=2pt, fill=paperbg, align=left, inner sep=4pt}]
+\node[entity,fill=amber!18] (dept) {\textbf{DEPARTMENTS}\\ \underline{id} $\cdot$ name $\cdot$ description};
+\node[entity,fill=amber!18, below=16mm of dept] (user) {\textbf{USERS}\\ \underline{id} $\cdot$ email $\cdot$ role\\ department\_id $\cdot$ is\_active};
+\node[entity, right=34mm of dept] (doc) {\textbf{DOCUMENTS}\\ \underline{id} $\cdot$ filename\\ visibility $\cdot$ status\\ department\_id $\cdot$ uploaded\_by};
+\node[entity, right=20mm of doc] (chunk) {\textbf{DOCUMENT\_CHUNKS}\\ \underline{id} $\cdot$ chunk\_index\\ child\_text $\cdot$ parent\_text\\ qdrant\_point\_id};
+\node[entity, below=16mm of user] (sess) {\textbf{CHAT\_SESSIONS}\\ \underline{id} $\cdot$ user\_id $\cdot$ title};
+\node[entity, right=22mm of sess] (msg) {\textbf{CHAT\_MESSAGES}\\ \underline{id} $\cdot$ session\_id\\ role $\cdot$ content $\cdot$ sources};
+\node[entity, right=20mm of msg] (qlog) {\textbf{QUERY\_LOGS}\\ \underline{id} $\cdot$ query\_text\\ retrieval\_method\\ faithfulness\_score $\cdot$ answered};
+% relationships
+\draw[arr] (dept) -- node[lbl]{1..N} (user);
+\draw[arr] (dept) -- node[lbl,above]{1..N} (doc);
+\draw[arr] (doc) -- node[lbl,above]{1..N CASCADE} (chunk);
+\draw[arr] (user) -- node[lbl]{1..N} (sess);
+\draw[arr] (sess) -- node[lbl,above]{1..N CASCADE} (msg);
+\draw[arr] (msg.east) -- node[lbl,above]{} (qlog.west);
+\draw[arr] (sess.south) to[bend right=20] node[lbl,below]{SET NULL} (qlog.south);
+\draw[arr] (user.east) to[bend right=10] node[lbl]{uploads} (doc.west);
+\end{tikzpicture}
+\caption{Entity-relationship diagram. Edges are labeled with cardinality and on-delete behavior;
+\code{query\_logs} links to a session with \code{SET NULL} so analytics survive deletion.}
+\label{fig:er}
+\end{figure}
+
+\begin{keyidea}
+\textbf{The dual store.} The relational schema is only half of where a document lives.
+\code{document\_chunks} holds canonical text and a pointer (\code{qdrant\_point\_id}) to the
+matching vector in Qdrant. The vector, its embeddings, and a denormalized copy of the chunk's
+access metadata live in the Qdrant collection (Section~\ref{sec:qdrant}). Ingestion writes both;
+reindexing reuses the stored point id so updates land in place.
+\end{keyidea}
+
+\section{The Ingestion Pipeline, End to End}
+On upload, the HTTP handler (\code{routers/documents.py::upload\_document}) does only the fast
+work---validate, persist a \code{processing} row, return \code{202 Accepted}---and schedules the
+heavy lifting as a background task (\code{ingestion\_service.py::process\_document}). The client
+then polls \code{GET /documents/\{id\}/status} until \code{ready} (Figure~\ref{fig:ingest}).
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=6mm and 10mm]
+\node[box,minimum width=30mm] (up) {POST /upload\\\scriptsize (multipart)};
+\node[decision, right=of up] (val) {validate};
+\node[box, right=14mm of val, minimum width=26mm] (row) {Document row\\\scriptsize status=processing};
+\node[box, below=10mm of row, minimum width=26mm] (acc) {202 Accepted};
+\node[box, below=16mm of up, minimum width=26mm] (parse) {parse\_document};
+\node[box, right=of parse, minimum width=24mm] (strip) {strip\\boilerplate};
+\node[box, right=of strip, minimum width=22mm] (chunk) {hierarchical\\chunk};
+\node[decision, below=10mm of chunk] (any) {chunks?};
+\node[box, right=12mm of any, minimum width=22mm] (embed) {embed children\\\scriptsize Gemini 768d};
+\node[box, below=10mm of embed, minimum width=24mm] (upsert) {upsert Qdrant\\\scriptsize dense+sparse};
+\node[box, left=12mm of upsert, minimum width=26mm] (persist) {persist chunks\\\scriptsize status=ready};
+\node[accentbox, below=10mm of parse, minimum width=26mm] (fail) {status=failed};
+\draw[arr] (up)--(val); \draw[arr] (val)--node[lbl,above]{ok}(row);
+\draw[arr] (val.south) to[bend right] node[lbl,left]{4xx}(acc);
+\draw[arr] (row)--(acc);
+\draw[arr] (row.south) to[bend left=10] node[lbl,right]{schedule}(parse.north);
+\draw[arr] (parse)--(strip); \draw[arr] (strip)--(chunk); \draw[arr] (chunk)--(any);
+\draw[arr] (any)--node[lbl,above]{yes}(embed);
+\draw[arr] (any.south) to[bend right] node[lbl,left]{no}(fail);
+\draw[arr] (embed)--(upsert); \draw[arr] (upsert)--(persist);
+\end{tikzpicture}
+\caption{Document ingestion: a fast request path (202 + background task) and the background
+pipeline parse $\rightarrow$ strip $\rightarrow$ chunk $\rightarrow$ embed $\rightarrow$ upsert
+$\rightarrow$ persist, with the scanned-PDF failure branch.}
+\label{fig:ingest}
+\end{figure}
+
+The orchestrator is wrapped so that on \emph{any} failure it marks the document \code{failed}
+(in a separate DB session) and swallows the exception---a background task must never crash the
+server. \code{hierarchical\_chunk} is deliberately \textbf{pure} (no DB/Gemini/Qdrant) so the
+most correctness-critical logic is unit-testable in isolation.
+
+\section{Parsing \& Boilerplate Stripping}
+Each parser turns bytes into \code{\{text, page\}} dicts: \textbf{PDF} (PyMuPDF, 1-based page
+numbers, skips image-only pages), \textbf{DOCX} (python-docx, \code{page = None} since Word has
+no reliable page API), \textbf{PPTX} (python-pptx, 1-based slide numbers).
+
+\textbf{Boilerplate stripping} (\code{\_strip\_boilerplate}) removes a repeated
+letterhead/footer that would make chunks from \emph{different} documents look similar---diluting
+embeddings and blunting the reranker. Two passes: a \textbf{frequency pass} drops lines appearing
+on $>60\%$ of pages (requires $\geq 2$ pages), and a \textbf{pattern pass} drops the company name
+(anchored), classification banners, bare page markers, footers ending in a page number, and short
+($<4$-word) all-caps or colon-terminated labels. Pages that become empty are dropped.
+
+\section{Hierarchical Chunking --- The Math}
+\label{sec:chunk}
+Pragya uses a hierarchical (parent/child) scheme to resolve a genuine tension: \emph{small chunks
+retrieve precisely} (a 256-token chunk is tightly on-topic) while \emph{large chunks generate
+well} (the LLM needs surrounding context). The resolution: \textbf{retrieve on children, generate
+from parents}---each small child carries a pointer to its larger parent, and it is the parent text
+the LLM reads.
+
+Token counts are approximated by word counts (one token $\approx 0.75$ words):
+
+\begin{align}
+\text{CHILD\_WORDS} &= 341 \approx 256/0.75 \quad\text{(embedded + retrieved)}\\
+\text{PARENT\_WORDS} &= 1365 \approx 1024/0.75 \quad\text{(sent to the LLM)}\\
+\text{CHILD\_OVERLAP\_WORDS} &= 68 = 0.20 \times 341 \quad\text{(20\% overlap)}\\
+\text{child\_step} &= 341 - 68 = 273 \quad\text{(advance per child)}
+\end{align}
+
+These are the literal constants in \code{ingestion\_service.py}. The 20\% child overlap guarantees
+a short fact straddling a boundary survives whole in at least one child; parents do \emph{not}
+overlap (they are context blocks, not match units). The algorithm flattens pages into a word
+stream (keeping each word's source page so a child reports the page it \emph{starts} on), splits
+into non-overlapping parents of up to 1365 words, then carves overlapping children of up to 341
+words stepping by 273 (Figure~\ref{fig:chunkwin}).
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[xscale=0.85]
+% word stream bar (one parent = 1365 words)
+\draw[fill=paperbg, draw=ink] (0,0) rectangle (13.65,0.5);
+\node[lbl] at (6.825,0.78) {Parent: words [0\,..\,1365) $\approx$ 1024 tokens (no overlap)};
+% child windows
+\foreach \s/\i in {0/0, 2.73/1, 5.46/2, 8.19/3, 10.92/4}{
+  \draw[fill=amber!35, draw=amberdark] (\s,-0.6-0.0) rectangle ({min(\s+3.41,13.65)},-0.15);
+  \node[font=\tiny] at ({\s+1.0},-0.38) {child \i};
+}
+\draw[decorate, decoration={brace, amplitude=4pt}, amberdark] (2.73,-0.72) -- (3.41,-0.72)
+  node[midway, below, font=\tiny, color=amberdark]{68w overlap};
+\node[lbl, anchor=west] at (0,-1.25) {Children: 341 words each, step 273 $\Rightarrow$ one full
+parent yields 5 overlapping children.};
+\end{tikzpicture}
+\caption{Hierarchical chunking window. A 1365-word parent is sub-split into five 341-word children
+that step forward by 273 words, overlapping their neighbour by 68 words (20\%). Children are
+embedded; the parent is what the LLM reads.}
+\label{fig:chunkwin}
+\end{figure}
+
+\textbf{Edge case.} If the entire document is $\leq 341$ words, the code uses the full text as
+\emph{both} child and parent (one chunk, \code{chunk\_index = 0})---a one-paragraph memo still
+yields exactly one well-formed chunk. With no extractable words (a scanned PDF), the function
+returns empty and the document fails with a clear message.
+
+\begin{divergence}
+\code{CLAUDE.md} specifies child = 256 tokens, parent = 1024 tokens. The implementation
+approximates tokens with words at the 0.75 ratio (341/1365 words). The trade-off (no tokenizer
+dependency, fully deterministic, unit-testable) is intentional; a token-dense chunk may slightly
+exceed the nominal token budget.
+\end{divergence}
+
+\section{Embedding --- Gemini \& Matryoshka}
+The \emph{child} texts (the retrieval unit) are embedded by \code{embed\_chunks()}:
+
+\begin{itemize}
+  \item \textbf{Model + dims from config:} \code{gemini-embedding-001} at \code{output\_dimensionality
+  = 768}.
+  \item \textbf{Matryoshka 3072$\to$768:} the 768-d prefix is itself valid because the model is
+  trained with nested representations. This shrinks the index $\sim$4$\times$. No re-normalization
+  is needed (cosine distance is scale-invariant).
+  \item \textbf{Asymmetric task type:} documents use \code{task\_type="retrieval\_document"}; the
+  query side uses \code{"retrieval\_query"}. Mixing them silently degrades retrieval---a classic
+  invisible RAG bug---so the two constants live in separate modules.
+  \item \textbf{Batching:} groups of \code{EMBEDDING\_BATCH\_SIZE = 20} with a 1\,s pause between
+  batches (free-tier discipline); the blocking call runs via \code{asyncio.to\_thread}.
+\end{itemize}
+
+\section{The Qdrant Collection}
+\label{sec:qdrant}
+All vectors live in one collection, \code{pragya\_docs}, created once at startup (idempotent).
+It is configured with two \textbf{named vectors} per point:
+
+\begin{lstlisting}[language=Python,caption={Named dense + sparse vector configuration (qdrant.py).}]
+vectors_config        = {"dense":  VectorParams(size=768, distance=COSINE, on_disk=False)}
+sparse_vectors_config = {"sparse": SparseVectorParams(index=SparseIndexParams(on_disk=False))}
+# payload keyword indexes (O(1) RBAC filtering): department_id, visibility, uploaded_by
+\end{lstlisting}
+
+Each point's payload carries \code{document\_id}, \code{department\_id}, \code{visibility},
+\code{uploaded\_by}, \code{chunk\_index}, \code{parent\_text}, \code{source\_filename}, and
+\code{page\_number}. Two design points: the \textbf{parent text is stored in the payload} (so
+generation needs no second DB round-trip), and the access metadata is \textbf{denormalized into
+every point} (so the access filter runs entirely inside the Qdrant query). Three payload fields
+(\code{department\_id}, \code{visibility}, \code{uploaded\_by}) get a keyword index, and all UUIDs
+are stored \emph{as strings}---Qdrant's \code{MatchValue} compares by exact type, so a raw
+\code{uuid.UUID} would match zero points with no error.
+
+\section{The Sparse Channel \& Its Honest Limitations}
+\label{sec:sparse}
+Pragya implements a sparse (keyword) vector intended as a BM25-style signal. This section documents
+how it is built \emph{and} a real defect the evaluation exposed.
+
+\begin{lstlisting}[language=Python,caption={Sparse vector construction --- ingestion vs.\ query (note the divergence).}]
+# INGESTION (build_sparse_vector, ingestion_service.py)
+index = abs(hash(word)) % 100_000      # index space = 100,000
+value = count(word) / total_tokens     # normalized term frequency
+
+# QUERY (sparse_retrieve, retrieval_service.py)
+index = abs(hash(word)) % 30_000       # index space = 30,000 (SPARSE_INDEX_SPACE)
+value = raw count(word)                # unnormalized term frequency
+\end{lstlisting}
+
+A sparse dot product contributes a non-zero score only when a query index and a stored index
+\emph{coincide}. They do not, for two independent reasons:
+
+\begin{enumerate}
+  \item \textbf{Index-space mismatch (100{,}000 vs 30{,}000).} \code{abs(hash(w)) \% 100000} and
+  \code{abs(hash(w)) \% 30000} are equal only by coincidence.
+  \item \textbf{Per-process hash salting.} Python's built-in \code{hash()} for strings is
+  randomized per process (\code{PYTHONHASHSEED}). Ingestion and querying run in different
+  processes, so the same word hashes differently---meaning that \emph{even if the moduli matched},
+  the indices would still not align.
+\end{enumerate}
+
+\begin{observation}
+The sparse channel contributes essentially \textbf{no real keyword matches} in the current build;
+dense retrieval carries the system. This is exactly consistent with the evaluation
+(Chapter~\ref{ch:eval}), where \emph{hybrid} scores almost identically to \emph{dense}
+($0.907$ vs $0.905$): if sparse were contributing real signal, hybrid would separate further. The
+fusion machinery (RRF) is correct and fully wired---it is simply fusing a strong dense list with a
+near-empty sparse list. The fix (a stable hash such as \code{hashlib}, or a learned sparse encoder
+like SPLADE) is recorded in Chapter~\ref{ch:journey}. The defect is documented rather than quietly
+patched so the Chapter~\ref{ch:eval} numbers remain attributable to the system that was measured.
+\end{observation}
+
+%==============================================================================
+\chapter{Retrieval Pipeline --- The Research Core}
+\label{ch:retrieval}
+%==============================================================================
+
+Everything in \code{services/retrieval\_service.py} answers one question well: \emph{given a
+user's question and their access rights, which passages should the LLM read before answering?}
+The module implements three pipelines behind one entry point, \code{retrieve(query,
+current\_user, method, document\_id)}. Two invariants run through every function: \textbf{asymmetric
+embedding} (query uses \code{retrieval\_query}, documents used \code{retrieval\_document}) and
+\textbf{access control on every search} (the visibility filter, Chapter~\ref{ch:generation}).
+
+\section{The Full Query Pipeline}
+Figure~\ref{fig:query} traces a question through the full pipeline (\code{hybrid\_rerank}, used by
+chat). Simpler methods are this pipeline with later stages removed.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=6mm and 12mm]
+\node[box,minimum width=30mm] (q) {Question + User};
+\node[accentbox, below=8mm of q, minimum width=34mm] (filt) {3-tier visibility filter};
+\node[box, below=8mm of filt, minimum width=30mm] (emb) {embed\_query\\\scriptsize 768d, retrieval\_query};
+\node[box, below left=10mm and 0mm of emb, minimum width=28mm] (dense) {dense\_retrieve\\\scriptsize cosine, top 20};
+\node[box, below right=10mm and 0mm of emb, minimum width=28mm] (sparse) {sparse\_retrieve\\\scriptsize BM25-style, top 20};
+\node[box, below=22mm of emb, minimum width=30mm] (rrf) {rrf\_fusion\\\scriptsize $k{=}60$, dedup, cap 40};
+\node[box, below=8mm of rrf, minimum width=30mm] (rr) {rerank\\\scriptsize cross-encoder, top 5};
+\node[accentbox, below=8mm of rr, minimum width=34mm] (out) {Top-5 parents $\to$ generation};
+\draw[arr] (q)--(filt); \draw[arr] (filt)--(emb);
+\draw[arr] (emb) -- (dense); \draw[arr] (emb) -- (sparse);
+\draw[arr] (dense) -- (rrf); \draw[arr] (sparse) -- (rrf);
+\draw[arr] (rrf)--(rr); \draw[arr] (rr)--(out);
+\draw[darr] (filt.east) to[bend left=55] node[lbl,right]{shared by both retrievers} (sparse.east);
+\end{tikzpicture}
+\caption{The full query pipeline. The visibility filter is built once and shared by both
+retrievers; dense + sparse feed RRF, which feeds the cross-encoder reranker.}
+\label{fig:query}
+\end{figure}
+
+\section{Dense Retrieval --- Cosine Similarity}
+Dense retrieval compares the query vector against each accessible document's \code{dense} vector by
+\textbf{cosine similarity} and returns the top 20:
+
+\begin{equation}
+\mathrm{cosine}(\mathbf{q},\mathbf{d}) = \frac{\mathbf{q}\cdot\mathbf{d}}{\lVert\mathbf{q}\rVert\,\lVert\mathbf{d}\rVert}
+= \frac{\sum_{i=1}^{768} q_i d_i}{\sqrt{\sum_{i=1}^{768} q_i^2}\,\sqrt{\sum_{i=1}^{768} d_i^2}} \in [-1,1]
+\end{equation}
+
+Qdrant computes this (the \code{dense} vector is configured \code{Distance.COSINE}) and returns it
+as each point's score. \textbf{Top 20 is deliberately generous:} dense and sparse each contribute 20
+candidates so RRF has a real pool and the reranker has enough to choose from. Retrieval favors
+recall; precision is recovered later. Dense retrieval is also used directly by document search
+(Section~\ref{sec:search}).
+
+\section{Sparse Retrieval --- BM25-Style Matching}
+Sparse retrieval catches exact keyword matches dense retrieval misses. Qdrant scores a sparse query
+against stored sparse vectors by a dot product over shared indices:
+
+\begin{equation}
+\mathrm{score}_{\text{sparse}}(\mathbf{q},\mathbf{d}) = \sum_{i \,\in\, \mathrm{idx}(\mathbf{q})\,\cap\,\mathrm{idx}(\mathbf{d})} q_i \cdot d_i
+\end{equation}
+
+where $\mathrm{idx}(\cdot)$ is the set of non-zero indices. Only indices present in both contribute
+---exactly keyword overlap. (As established in Section~\ref{sec:sparse}, the channel runs but finds
+few real intersections in the current build; the mathematics is correct.)
+
+\section{RRF Fusion --- Formula \& Worked Example}
+Dense and sparse produce two ranked lists whose raw scores are not comparable (a cosine $\approx
+0.7$ vs a sparse dot product of $3.0$). \textbf{Reciprocal Rank Fusion} ignores raw scores and uses
+only rank:
+
+\begin{equation}
+\mathrm{RRF}(d) = \sum_{L \,\in\, \{\text{dense},\,\text{sparse}\}} \frac{1}{k + \mathrm{rank}_L(d)}, \qquad k = 60
+\end{equation}
+
+where $\mathrm{rank}_L(d)$ is the 1-based position of $d$ in list $L$, and an absent document
+contributes nothing from that list. \textbf{Why $k=60$:} it dampens the very top ranks
+($\tfrac{1}{61}\approx 0.01639$ vs $\tfrac{1}{62}\approx 0.01613$), so no single list dominates
+merely because one item ranked first. 60 is the standard default (Cormack et al., 2009); beyond it,
+RRF is \textbf{parameter-free}. Because contributions \emph{sum}, a document ranked well in
+\emph{both} lists beats one ranked \#1 in only one---rewarding cross-method agreement.
+
+\textbf{Worked example.} Two ranked lists over five chunks A--E:
+
+\begin{table}[h]
+\centering
+\caption{RRF worked example: two ranked lists fuse into one ($k=60$).}
+\label{tab:rrf}
+\begin{tabular}{c c c c c}
+\toprule
+\textbf{Chunk} & \textbf{Dense contribution} & \textbf{Sparse contribution} & \textbf{RRF score} & \textbf{Final rank}\\
+\midrule
+\textbf{A} & rank 1 $\to 1/61=0.01639$ & rank 2 $\to 1/62=0.01613$ & \textbf{0.03252} & \textbf{1}\\
+\textbf{C} & rank 3 $\to 1/63=0.01587$ & rank 1 $\to 1/61=0.01639$ & \textbf{0.03227} & \textbf{2}\\
+\textbf{B} & rank 2 $\to 1/62=0.01613$ & rank 4 $\to 1/64=0.01563$ & \textbf{0.03175} & \textbf{3}\\
+E & --- (absent) & rank 3 $\to 1/63=0.01587$ & 0.01587 & 4\\
+D & rank 4 $\to 1/64=0.01563$ & --- (absent) & 0.01563 & 5\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  width=12cm, height=5.2cm, ybar, bar width=14pt,
+  ymin=0, ymax=0.035, ylabel={RRF score},
+  symbolic x coords={A,C,B,E,D}, xtick=data,
+  nodes near coords, nodes near coords style={font=\tiny},
+  every node near coord/.append style={/pgf/number format/fixed, /pgf/number format/precision=5},
+  enlarge x limits=0.12, ymajorgrids, tick label style={font=\small},
+]
+\addplot[fill=amber, draw=amberdark] coordinates {(A,0.03252)(C,0.03227)(B,0.03175)(E,0.01587)(D,0.01563)};
+\end{axis}
+\end{tikzpicture}
+\caption{Fused RRF scores from Table~\ref{tab:rrf}. A and C---ranked well in \emph{both} lists---rise
+to the top; D and E, strong in only one list, sink. Fusion rewards cross-method agreement with no
+tunable weights.}
+\label{fig:rrfchart}
+\end{figure}
+
+The implementation accumulates these scores in a dict keyed by \code{qdrant\_id} (so deduplication is
+automatic), sorts descending, and \textbf{caps the pool at 40}---enough for the reranker without
+cross-encoding an unbounded list.
+
+\section{Cross-Encoder Reranking}
+The final stage re-scores fused candidates with a cross-encoder and keeps the best five.
+
+\begin{align}
+\text{bi-encoder:}\quad & \mathrm{sim}_{\text{bi}}(q,d) = \mathrm{cosine}\big(\mathrm{Enc}(q),\,\mathrm{Enc}(d)\big)\\
+\text{cross-encoder:}\quad & \mathrm{score}_{\text{cross}}(q,d) = \mathrm{Transformer}\big(\texttt{[CLS]}\,q\,\texttt{[SEP]}\,d\,\texttt{[SEP]}\big) \to \mathbb{R}
+\end{align}
+
+A bi-encoder embeds query and document \emph{independently} (cheap; nothing precomputable is lost
+because everything is precomputed). A cross-encoder feeds the \emph{pair} through the transformer
+together, letting attention relate every query token to every document token---far more accurate but
+costly, which is why it runs only on the $\sim$40 fused candidates. Pragya uses
+\code{cross-encoder/ms-marco-MiniLM-L-6-v2} (sentence-transformers, $\sim$85\,MB, loaded once into a
+module-level singleton). It scores \code{(query, parent\_text)} pairs---\emph{not} \code{child\_text}
+---because the parent is what the LLM actually reads, then keeps the top 5.
+
+\begin{observation}
+\textbf{Reranking is not a free lunch.} Intuitively a cross-encoder should only help. On Pragya's
+corpus it does \emph{not}: \code{hybrid\_rerank} scores lowest of the three methods, with faithfulness
+dropping to $0.75$. The likely mechanism is \textbf{over-pruning}---cutting aggressively to top-5
+parents sometimes drops a context block the answer needed, and an answer missing a source scores
+worse on faithfulness. Full treatment in Section~\ref{sec:findings}.
+\end{observation}
+
+\section{The Three Methods as Configurations}
+All three experiments are the same pipeline truncated at different stages (Table~\ref{tab:methods}).
+
+\begin{table}[h]
+\centering
+\caption{The three retrieval methods as pipeline configurations.}
+\label{tab:methods}
+\begin{tabularx}{\linewidth}{X c c c}
+\toprule
+\textbf{Stage} & \textbf{dense (A)} & \textbf{hybrid (B)} & \textbf{hybrid\_rerank (C)}\\
+\midrule
+Embed query (asymmetric) & \checkmark & \checkmark & \checkmark\\
+Dense retrieve (top 20, cosine) & \checkmark & \checkmark & \checkmark\\
+Sparse retrieve (top 20, BM25-style) & --- & \checkmark & \checkmark\\
+RRF fusion ($k{=}60$, cap 40) & --- & \checkmark & \checkmark\\
+Cross-encoder rerank (top 5) & --- & --- & \checkmark\\
+\midrule
+Typical output cardinality & up to 20 & up to 40 & exactly 5\\
+Relative cost & 1 embed + 1 search & 1 embed + 2 searches & + $\sim$40 cross-enc.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+In the running system, chat uses \code{hybrid\_rerank} (\code{CHAT\_RETRIEVAL\_METHOD}), document
+search uses \code{dense} directly, and all three are compared head-to-head only by the evaluation
+harness.
+
+\begin{keyidea}
+\textbf{The K-asymmetry caveat.} The methods return different numbers of contexts (dense $\approx 8$
+deduped parents, hybrid $\approx 12$, rerank exactly 5). A fair metric comparison cannot score ``all
+returned contexts.'' The evaluation caps scoring to a fixed top-3 (context precision) and top-2
+(faithfulness), turning the comparison into a clean precision@$K$ across all three methods
+(Chapter~\ref{ch:eval}).
+\end{keyidea}
+
+%==============================================================================
+\chapter{Generation, Citations \& Access Control}
+\label{ch:generation}
+%==============================================================================
+
+Retrieval found the relevant parent chunks; this chapter turns them into a grounded, cited answer
+that streams to the user, and covers the access-control system that decided which chunks the user
+could see.
+
+\section{Citation-Enforced Generation}
+The single most important generation decision: the model is \textbf{forbidden from using any
+knowledge outside the retrieved context}. \code{build\_citation\_prompt()} assembles the prompt in
+four parts---system rules, optional conversation history, numbered context blocks, the question. The
+system instructions (verbatim from the code):
+
+\begin{lstlisting}[language=none,caption={The five-line system contract (generation\_service.py).}]
+You are Pragya, a precise knowledge assistant.
+Answer ONLY using the provided context blocks.
+Cite every factual claim using [Source: N] where N is the context block number.
+If the answer is not in the context respond with exactly: I don't have information on
+  this in your department's documents.
+Do not infer, extrapolate, or use outside knowledge.
+\end{lstlisting}
+
+Three of the five lines exist purely to suppress hallucination, converting open-ended generation into
+a \textbf{closed-book-over-provided-context} task: the model's job is reduced to reading and
+attributing, not recalling. The retrieved chunks are then emitted as numbered blocks, each a 1-based
+number, a \code{Source:} line (filename + page if present), and the block's \emph{parent} text:
+
+\begin{lstlisting}[language=none,caption={Numbered context-block layout fed to Gemini.}]
+Context blocks:
+[1] Source: HR_Leave_Policy_2025.pdf, Page 4
+<the full parent_text of the top chunk>
+
+[2] Source: IT_Security_Policy_2025.pdf, Page 2
+<the full parent_text of the next chunk>
+...
+Question: How many casual leaves do I get?
+Answer:
+\end{lstlisting}
+
+The block numbers are load-bearing: after generation, \code{extract\_sources()} finds every
+\code{[Source: N]} (regex \code{\textbackslash[Source:\textbackslash s*(\textbackslash d+)\textbackslash]}),
+looks up \code{chunks[N-1]}, and pulls the real filename + page, deduplicated by
+\code{(filename, page)}; a hallucinated out-of-range $N$ is skipped. The result is persisted in
+\code{chat\_messages.sources} and rendered as citation chips.
+
+\begin{keyidea}
+\textbf{The fixed refusal is a three-way contract.} The exact string \code{NO\_INFO\_RESPONSE} is
+defined once and reused in three places that must never drift: (1) the prompt instructs the model to
+emit it verbatim, (2) the chat router streams it when retrieval returns no chunks, and (3)
+\code{response\_indicates\_no\_info()} matches it to set \code{query\_logs.answered = False}. A
+one-character drift would mislabel analytics.
+\end{keyidea}
+
+\section{Parent Deduplication Before Generation}
+Overlapping children frequently map to the same parent, so the top-$k$ can contain near-identical
+parent blocks---wasting tokens and inducing over-citation (\code{[Source: 1,2,3,4,5]} for one fact).
+\code{\_dedupe\_by\_parent()} keys each chunk on the first 200 characters of its \code{parent\_text}
+and keeps the first occurrence, preserving order. It is shared by \emph{both}
+\code{build\_citation\_prompt()} (to number blocks) and \code{extract\_sources()} (to resolve
+\code{[Source: N]})---they must dedupe identically or the citation numbers would not line up.
+
+\section{SSE Streaming \& Turn Persistence}
+A grounded answer over five parents takes seconds; streaming tokens as they arrive makes the product
+feel alive. \code{generate\_stream()} calls Gemini with \code{stream=True} and yields one SSE frame
+\code{data: <token>} per token, with two sentinels: \code{[DONE]} (clean finish) and
+\code{[ERROR] <msg>} (failed mid-stream, e.g. a free-tier 429). Because a streaming response has
+already sent its \code{200 OK} headers, an error can only be signaled \textbf{in-band}.
+
+The streaming + persistence ordering (Figure~\ref{fig:sse}) is the subtle part:
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=5mm and 14mm]
+\node[box,minimum width=34mm] (a) {Commit session + USER message\\\scriptsize (before returning)};
+\node[box, below=of a, minimum width=34mm] (b) {retrieve() grounding chunks};
+\node[accentbox, below=of b, minimum width=34mm] (c) {Return 200 + SSE headers};
+\node[box, below=of c, minimum width=34mm] (d) {Stream token frames $\to$ client};
+\node[box, below=of d, minimum width=34mm] (e) {\code{[DONE]}};
+\node[box, below=of e, minimum width=46mm] (f) {(fresh session) ASSISTANT message\\ + query log + auto-title\\\scriptsize errors swallowed --- response already sent};
+\draw[arr] (a)--(b); \draw[arr] (b)--(c); \draw[arr] (c)--(d); \draw[arr] (d)--(e); \draw[arr] (e)--(f);
+\end{tikzpicture}
+\caption{Streaming + persistence ordering. The user message is committed before the response; the
+assistant message, query log, and title are written \emph{after} \code{[DONE]} in a fresh DB session.}
+\label{fig:sse}
+\end{figure}
+
+On the \textbf{no-chunks} path the router streams \code{NO\_INFO\_RESPONSE} and logs
+\code{answered=False}; on the \textbf{error} path it logs \code{answered=False} but persists no blank
+assistant message (an empty bubble would render broken, and \code{answered} feeds the research table).
+The auto-title is a best-effort second Gemini call that falls back to the question's first words.
+
+\section{The 3-Tier Visibility Model}
+\label{sec:visibility}
+Access control is enforced at the \textbf{vector-DB layer} (retrieval) and the \textbf{application
+layer} (listing, status, intelligence, reindex). Three tiers live on \code{documents.visibility},
+denormalized into every Qdrant payload (Table~\ref{tab:tiers}).
+
+\begin{table}[h]
+\centering
+\caption{The three visibility tiers.}
+\label{tab:tiers}
+\begin{tabularx}{\linewidth}{l X l}
+\toprule
+\textbf{Tier} & \textbf{Who can access} & \textbf{Who creates}\\
+\midrule
+\code{company} & All authenticated users, any department & Admins only\\
+\code{department} & Users whose \code{department\_id} matches (default) & Any user (own dept)\\
+\code{personal} & Only the uploader (\code{uploaded\_by == user.id}) --- not even admins & Any user\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\code{build\_visibility\_filter()} expresses ``retrievable if any tier grants access'' as a Qdrant
+\code{should} (OR) of three \code{must} (AND) sub-filters:
+
+\begin{equation}
+\mathrm{retrievable}(c) =
+\underbrace{(v_c{=}\texttt{company})}_{\text{tier 1}}
+\;\lor\;
+\underbrace{(v_c{=}\texttt{department} \wedge \mathrm{dept}_c{=}\mathrm{dept}_u)}_{\text{tier 2}}
+\;\lor\;
+\underbrace{(v_c{=}\texttt{personal} \wedge \mathrm{owner}_c{=}u)}_{\text{tier 3}}
+\end{equation}
+
+Because the filter is part of \emph{every} retrieval query, a forbidden chunk is never a candidate
+(Figure~\ref{fig:visibility}).
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=6mm and 14mm]
+\node[box] (s) {chunk $c$ for user $u$};
+\node[decision, below=8mm of s] (v) {visibility?};
+\node[accentbox, right=22mm of v] (yes) {retrievable};
+\node[box, below=14mm of v] (dept) {dept$_c$ = dept$_u$?};
+\node[decision, left=14mm of dept] (pers) {owner$_c$ = $u$?};
+\node[box, below=8mm of dept] (no) {filtered out};
+\draw[arr] (s)--(v);
+\draw[arr] (v)--node[lbl,above]{company}(yes);
+\draw[arr] (v)--node[lbl,right]{department}(dept);
+\draw[arr] (v.west) to[bend right=12] node[lbl,above]{personal}(pers.north);
+\draw[arr] (dept.east) to[bend right=20] node[lbl,right]{yes}(yes.south);
+\draw[arr] (dept)--node[lbl,right]{no}(no);
+\draw[arr] (pers.south) to[bend right] node[lbl,left]{yes}(yes.west);
+\draw[arr] (pers) to[bend left=10] node[lbl,left]{no}(no.west);
+\end{tikzpicture}
+\caption{Per-chunk visibility decision. \code{company} is always retrievable; \code{department} and
+\code{personal} require a department or owner match respectively.}
+\label{fig:visibility}
+\end{figure}
+
+The department and user ids are \textbf{stringified} for the filter. The retrieval filter
+deliberately has \textbf{no admin branch}: for retrieval, an admin is scoped to their own department
+like anyone else. The \textbf{application layer} (\code{can\_access\_document}) is where the admin
+asymmetry lives: \code{company} $\to$ everyone, \code{personal} $\to$ only the uploader,
+\code{department} $\to$ an admin may access \emph{any} department's dept-docs, everyone else only
+their own. Creating a \code{company} document is admin-gated at upload (else \code{403}).
+
+\section{JWT Authentication \& the RBAC Dependency Chain}
+Authentication is stateless JWTs; there are no server-side sessions. Passwords are bcrypt-hashed (salt
+stored inside the hash; constant-time verify). \code{create\_access\_token()} mints:
+
+\begin{lstlisting}[language=none,caption={JWT payload (auth\_service.py), signed HS256, 8-hour expiry.}]
+{
+  "sub":           "<user_id>",                 # subject (UUID as string)
+  "department_id": "<department_id>" | null,     # the RBAC boundary; real null if absent
+  "role":          "admin" | "user" | "viewer",
+  "exp":           <now + 8 hours>,              # UTC-aware
+  "iat":           <now>                         # issued-at
+}
+\end{lstlisting}
+
+UUIDs are stringified (\code{jwt.encode} runs \code{json.dumps}, which cannot serialize a UUID), and a
+null \code{department\_id} is a real JSON \code{null}, never the string \code{"None"} (which would
+poison the RBAC filter). Authorization is a chain of FastAPI dependencies (Figure~\ref{fig:auth}):
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=8mm]
+\node[box,minimum width=24mm] (tok) {Bearer JWT};
+\node[box, right=10mm of tok, minimum width=24mm] (dec) {decode\_token\\\scriptsize sig + expiry (401)};
+\node[box, right=10mm of dec, minimum width=30mm] (gcu) {get\_current\_user\\\scriptsize load active user (401/404)};
+\node[accentbox, right=10mm of gcu, minimum width=24mm] (adm) {require\_admin\\\scriptsize 403 if not admin};
+\node[box, below=8mm of gcu, minimum width=30mm] (h1) {protected route};
+\node[box, below=8mm of adm, minimum width=24mm] (h2) {admin route};
+\draw[arr] (tok)--(dec); \draw[arr] (dec)--(gcu); \draw[arr] (gcu)--(adm);
+\draw[arr] (gcu)--(h1); \draw[arr] (adm)--(h2);
+\end{tikzpicture}
+\caption{The RBAC dependency chain. \code{get\_current\_user} folds the \code{is\_active} check into
+its query (a deactivated user loses access on the next request everywhere); \code{require\_admin}
+layers a role gate on top.}
+\label{fig:auth}
+\end{figure}
+
+A logged-in non-admin gets \code{403} (forbidden), distinct from the \code{401} an anonymous caller
+gets. Login returns an identical \code{401} whether the email is unknown or the password wrong---no
+email enumeration.
+
+%==============================================================================
+\chapter{Feature Modules}
+\label{ch:features}
+%==============================================================================
+
+This chapter walks through every feature module built on the foundation of Chapters~\ref{ch:data}--%
+\ref{ch:generation}: purpose, mechanism, endpoints, and data flow.
+
+\section{Auth \& Onboarding}
+\label{sec:auth}
+\textbf{Purpose.} Get a new employee from ``no account'' to ``querying their department's documents''
+while bootstrapping an empty organization without a chicken-and-egg deadlock. Onboarding is a
+two-step flow---create an account, then join a department---because the department is the RBAC
+boundary and a new organization has no departments or admins yet (Figure~\ref{fig:onboard}).
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=6mm and 12mm]
+\node[box,minimum width=26mm] (reg) {POST /auth/register};
+\node[decision, right=of reg] (first) {first user?};
+\node[accentbox, above right=4mm and 12mm of first, minimum width=20mm] (admin) {role=admin};
+\node[box, below right=4mm and 12mm of first, minimum width=20mm] (user) {role=user};
+\node[box, below=14mm of first, minimum width=26mm] (getd) {GET /departments};
+\node[box, below=8mm of getd, minimum width=30mm] (pick) {pick or (admin) create dept};
+\node[box, below=8mm of pick, minimum width=34mm] (patch) {PATCH /auth/me\\\scriptsize saveToken(fresh JWT)};
+\node[accentbox, below=8mm of patch, minimum width=24mm] (chat) {$\to$ /chat};
+\draw[arr] (reg)--(first);
+\draw[arr] (first)--node[lbl]{yes}(admin);
+\draw[arr] (first)--node[lbl]{no}(user);
+\draw[arr] (first)--(getd);
+\draw[arr] (getd)--(pick); \draw[arr] (pick)--(patch); \draw[arr] (patch)--(chat);
+\end{tikzpicture}
+\caption{Two-step onboarding. The first user ever is auto-promoted to admin; step 2 self-assigns a
+department and saves a fresh JWT carrying the new \code{department\_id}.}
+\label{fig:onboard}
+\end{figure}
+
+\begin{table}[h]
+\centering
+\caption{Auth \& department endpoints.}
+\label{tab:authendpoints}
+\begin{tabularx}{\linewidth}{l X}
+\toprule
+\textbf{Endpoint} & \textbf{Notable behavior}\\
+\midrule
+\code{POST /auth/register} & Email-uniqueness $\to$ clean 409; first user $\to$ admin (counted before insert); returns JWT (registration doubles as login).\\
+\code{POST /auth/login} & Uniform 401 (no email enumeration).\\
+\code{GET /auth/me} & Hydrate auth state.\\
+\code{PATCH /auth/me} & Self-assign department (404 if missing); role change admin-only (403); returns a \emph{fresh} JWT.\\
+\code{POST /departments} & Bootstrap: any user while the table is empty, else admin-only; 409 on duplicate.\\
+\code{GET /departments} & Any authenticated user (drives the signup picker).\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\textbf{Why the fresh token on \code{PATCH /auth/me}.} The JWT carries \code{department\_id}, and most
+requests authorize from the token without a DB hit. Returning a fresh token (which the frontend saves
+before navigating) makes the new department effective immediately rather than at token expiry.
+
+\section{Document Intelligence}
+\label{sec:intel}
+\textbf{Purpose.} Turn an ingested document into a structured brief: a 3--5 sentence summary, 5--7 key
+points, action items, a coarse type, and a word count. Three ideas make it cheap and robust:
+\textbf{reconstruct, don't re-parse} (rebuild text from stored \code{child\_text} chunks---free, no
+Gemini/PyMuPDF); \textbf{map-reduce for long documents} (above 4000 words); \textbf{trust Python for
+the count} (\code{word\_count = len(text.split())}; the LLM's count is ignored). The flow is
+idempotent---if a summary already exists it skips (Figure~\ref{fig:mapreduce}).
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=6mm and 12mm]
+\node[box,minimum width=30mm] (run) {run\_intelligence\\\scriptsize background, own session};
+\node[decision, below=8mm of run] (ready) {ready \&\\no summary?};
+\node[box, right=16mm of ready, minimum width=22mm] (skip) {skip (idempotent)};
+\node[box, below=10mm of ready, minimum width=30mm] (text) {get\_document\_text\\\scriptsize from child chunks};
+\node[decision, below=8mm of text] (long) {$\geq$ 4000\\words?};
+\node[box, left=14mm of long, minimum width=24mm] (single) {single call};
+\node[box, right=14mm of long, minimum width=30mm] (map) {MAP: each section\\$\to$ 2--3 sentences};
+\node[box, below=8mm of map, minimum width=30mm] (reduce) {REDUCE: combine\\$\to$ final extraction};
+\node[box, below=18mm of long, minimum width=42mm] (persist) {parse JSON, overwrite word\_count,\\persist 5 fields};
+\draw[arr] (run)--(ready);
+\draw[arr] (ready)--node[lbl,above]{no}(skip);
+\draw[arr] (ready)--node[lbl,right]{yes}(text);
+\draw[arr] (text)--(long);
+\draw[arr] (long)--node[lbl,above]{short}(single);
+\draw[arr] (long)--node[lbl,above]{long}(map);
+\draw[arr] (map)--(reduce);
+\draw[arr] (single) to[bend right=10] (persist.west);
+\draw[arr] (reduce) to[bend left=10] (persist.east);
+\end{tikzpicture}
+\caption{Document intelligence with the map-reduce branch for long documents. Short documents take a
+single extraction call; long ones summarize section-by-section first.}
+\label{fig:mapreduce}
+\end{figure}
+
+The extraction prompt demands valid JSON (\code{summary}, \code{key\_points}, \code{action\_items},
+\code{document\_type}, \code{word\_count}); parsing is defensive (\code{\_strip\_code\_fences}, graceful
+degradation on \code{JSONDecodeError}). Endpoints: \code{POST /intelligence/\{id\}} returns 200 + the
+result if cached, else 202 + scheduled; \code{GET /intelligence/\{id\}} returns 404 until generated.
+Both enforce \code{can\_access\_document}, so a \code{personal} document's intelligence is visible only
+to its uploader.
+
+\section{Meeting Assistant}
+\textbf{Purpose.} Turn a raw transcript into structured output---summary, decisions, owned action
+items (each with a \code{priority}), participants, an estimated duration, and follow-up questions---in
+a single Gemini call. No persistence (ephemeral). \code{\_safe\_parse()} strips fences and validates
+with Pydantic, falling back to a minimal valid response. Transcripts above \code{\_MAX\_WORDS = 6000}
+are truncated with a note. Endpoints: \code{POST /meeting/process} (pasted text) and
+\code{POST /meeting/upload} (\code{.txt} decoded UTF-8, or \code{.pdf} via the ingestion
+\code{parse\_pdf}); the router owns file extraction, the service owns intelligence extraction.
+
+\section{Document Search}
+\label{sec:search}
+\textbf{Purpose.} A fast semantic search for finding \emph{where} something is (vs chat's
+\emph{answering}). \code{GET /documents/search} is the dense path used directly: embed the query, run
+one dense Qdrant search under the \emph{same} 3-tier visibility filter, retrieve a pool of 30, group
+to at most 2 chunks per document, return the top $N$ (default 10). Preview is the first 200 chars of
+\code{parent\_text}; a user with no department gets an empty list.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=4mm and 12mm]
+\node[box,minimum width=26mm] (q) {GET /search?q};
+\node[box, right=of q, minimum width=22mm] (e) {embed\_query};
+\node[box, right=of e, minimum width=30mm] (d) {dense top 30\\\scriptsize + visibility filter};
+\node[box, right=of d, minimum width=26mm] (g) {$\leq$ 2 / doc};
+\node[accentbox, right=of g, minimum width=22mm] (r) {top $N$};
+\draw[arr] (q)--(e); \draw[arr] (e)--(d); \draw[arr] (d)--(g); \draw[arr] (g)--(r);
+\end{tikzpicture}
+\caption{Document search: dense retrieval reused directly, visibility-filtered, capped at two chunks
+per document.}
+\label{fig:search}
+\end{figure}
+
+\section{Conversation History}
+\textbf{Purpose.} Persist conversations and give chat multi-turn memory. Before saving a new user
+message, the handler loads the most recent \code{HISTORY\_LIMIT = 4} messages and replays the last
+\code{MAX\_HISTORY\_TURNS = 4} turns as \code{Human:}/\code{Assistant:} lines (loading before saving
+keeps the current question out of its own context). Endpoints: \code{GET /chat/sessions} (most-recent
+first, with a message-count sub-query and a first-user-message preview),
+\code{GET /chat/sessions/\{id\}/messages} (owner-only, oldest-first), and
+\code{DELETE /chat/sessions/\{id\}} (owner-only; \code{chat\_messages} CASCADE, \code{query\_logs}
+SET NULL).
+
+\section{Analytics Dashboard}
+\label{sec:analytics}
+\textbf{Purpose.} A read-only admin view of platform usage. Every endpoint requires
+\code{require\_admin}; the data source is the denormalized \code{query\_logs} plus
+\code{documents}/\code{users}/\code{departments} (Table~\ref{tab:analytics}).
+
+\begin{table}[h]
+\centering
+\caption{The six analytics endpoints.}
+\label{tab:analytics}
+\begin{tabularx}{\linewidth}{l X}
+\toprule
+\textbf{Endpoint} & \textbf{What it returns / data source}\\
+\midrule
+\code{/analytics/overview} & Headline cards: total/answered/unanswered queries, ready docs, active users, departments, avg response time, avg faithfulness. Scalar aggregates.\\
+\code{/analytics/top-queries} & Most-repeated topics, grouped by the first 60 chars of \code{query\_text}.\\
+\code{/analytics/unanswered} & Recent \code{answered=False} questions, joined to department name --- the ``what documents are missing'' signal.\\
+\code{/analytics/document-usage} & Documents ranked by \code{chunk\_count} (a size proxy; true hit-counts would need parsing \code{sources} JSONB).\\
+\code{/analytics/queries-over-time} & Daily counts for 30 days, zero-filled in Python so the chart has no gaps.\\
+\code{/analytics/department-activity} & Per-department query/doc/user counts --- three separate GROUP BYs stitched in Python (a single join would multiply one-to-many rows).\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The \code{avg\_faithfulness} card averages \code{query\_logs.faithfulness\_score}, populated by the
+offline RAGAS evaluation (Chapter~\ref{ch:eval}), not at query time.
+
+\section{Admin Panel}
+\textbf{Purpose.} Manage the two things that drive access control: users (and roles) and departments.
+All endpoints are \code{require\_admin}-gated; queries avoid N+1 patterns. \code{GET /admin/users}
+(one join for department names), \code{GET /admin/departments} (one grouped count), and
+\code{PATCH /admin/users/\{id\}/role} (validates the role, 404 if missing, and \textbf{guards against
+an admin stripping their own admin role}---a 400---which would lock them out of the dashboard).
+
+%==============================================================================
+\chapter{Frontend Architecture}
+\label{ch:frontend}
+%==============================================================================
+
+The frontend is a Next.js 15 application providing every user-facing surface. It obeys one hard rule:
+\textbf{the frontend never touches a database}---it talks only to the FastAPI backend through one
+client module (\code{lib/api.ts}). Everything security-relevant is enforced server-side; the client's
+job is presentation.
+
+\section{Next.js 15 App Router Structure}
+The app uses the App Router (file-system routing under \code{app/}), React 19, and React Server
+Components by default, with \code{"use client"} opting interactive trees into client rendering:
+
+\begin{lstlisting}[language=none,caption={The route tree.}]
+app/
+  layout.tsx              # root: fonts, ThemeProvider, global CSS
+  globals.css             # design tokens + Tailwind v4 wiring
+  page.tsx                # public landing (Nav, Hero, TerminalDemo, Features, Footer)
+  login/page.tsx          # auth + two-step onboarding
+  (app)/                  # route GROUP - the authenticated shell
+    layout.tsx            # sidebar + auth gate + keyboard shortcuts + ToastProvider
+    chat/page.tsx         # the chat centerpiece (SSE streaming)
+    conversations/page.tsx
+    documents/page.tsx
+    documents/[docId]/page.tsx   # per-document view + intelligence
+    meeting/page.tsx
+    admin/page.tsx
+\end{lstlisting}
+
+The \code{(app)} parentheses make a \textbf{route group}: it wraps every authenticated page in a
+shared layout (sidebar, auth gate, keyboard shortcuts, toasts) \emph{without} adding an \code{/app}
+URL segment---so chat is at \code{/chat}. Two Next-15 specifics appear in the code:
+\code{useSearchParams()} (reading \code{?session=}/\code{?doc=}) is wrapped in a \code{<Suspense>}
+boundary, and theming uses \code{next-themes} with \code{attribute="class"} toggling \code{.dark} on
+\code{<html>}.
+
+\section{The Design System --- Ink, Paper, Amber}
+The visual design is governed by \code{DESIGN.md} and implemented precisely. The brand voice is
+\emph{``a calm library with an engine room underneath''}, expressed through three typefaces---%
+\textbf{Fraunces} (serif, the ``wisdom'' voice: headlines, wordmark), \textbf{Inter} (sans, body/UI,
+weights 400/500 only), \textbf{JetBrains Mono} (the ``machinery'' voice: terminal, trace lines,
+labels)---and a tightly constrained palette (Figure~\ref{fig:palette}).
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[x=1mm,y=1mm, every node/.style={font=\scriptsize}]
+\begin{scope}
+\definecolor{c0}{HTML}{F5F1E8}\definecolor{c1}{HTML}{FDFBF5}\definecolor{c2}{HTML}{2C2820}\definecolor{c3}{HTML}{E7E0CF}
+\fill[c0,draw=ink] (0,0) rectangle (22,12); \node at (11,-3) {bg-main};
+\fill[c1,draw=ink] (26,0) rectangle (48,12); \node at (37,-3) {bg-card};
+\fill[c2,draw=ink] (52,0) rectangle (74,12); \node[white] at (63,6) {text}; \node at (63,-3) {primary};
+\fill[c3,draw=ink] (78,0) rectangle (100,12); \node at (89,-3) {border};
+\end{scope}
+\node[font=\scriptsize\itshape] at (50,18) {Theme-dependent (light ``paper'' shown)};
+% constants row
+\begin{scope}[yshift=-30mm]
+\definecolor{k0}{HTML}{211E19}\definecolor{k1}{HTML}{1F1C17}\definecolor{k2}{HTML}{E8C87E}\definecolor{k3}{HTML}{F5F1E8}
+\fill[k0,draw=ink] (0,0) rectangle (22,12); \node[white] at (11,6) {ink}; \node at (11,-3) {sidebar};
+\fill[k1,draw=ink] (26,0) rectangle (48,12); \node[white] at (37,6) {terminal}; \node at (37,-3) {surfaces};
+\fill[k2,draw=ink] (52,0) rectangle (74,12); \node at (63,6) {accent}; \node at (63,-3) {amber};
+\fill[k3,draw=ink] (78,0) rectangle (100,12); \node at (89,-3) {paper};
+\node[font=\scriptsize\itshape] at (50,18) {Constants --- identical in both modes};
+\end{scope}
+\end{tikzpicture}
+\caption{The ink--paper--amber palette. Theme-dependent tokens flip between light/dark; the constants
+(ink sidebar, terminal surfaces, amber accent, paper) never change. Amber \code{\#E8C87E} is the
+\emph{only} accent color---no purple, gradients, glassmorphism, or drop shadows.}
+\label{fig:palette}
+\end{figure}
+
+Every color is a CSS variable wired into Tailwind v4 via \code{@theme inline}, so a utility like
+\code{bg-main} emits \code{var(--bg-main)} and re-resolves when the theme flips; components reference
+tokens, never hex. \textbf{The signature trace line.} Under every \emph{grounded} answer,
+\code{ChatMessage.tsx} renders a JetBrains-Mono microline \code{hybrid -> rrf -> rerank(5) $\cdot$
+287ms}, surfacing the real retrieval pipeline and measured latency---making the ``engine room''
+visible.
+
+\section{The API Layer \& SWR Caching}
+\code{lib/api.ts} is the single place every backend call lives, centralizing three cross-cutting
+concerns: \textbf{bearer-token injection} (from \code{localStorage}), \textbf{uniform error handling}
+(a typed \code{ApiError} carrying status + backend detail), and \textbf{401 auto-logout}. Token
+handling is \emph{display-only} on the client---\code{lib/auth.ts} decodes (but never verifies) the
+JWT payload to render name/role/department; the backend verifies the signature on every request.
+
+\textbf{The SSE exception.} Chat cannot use the native \code{EventSource} (it only does
+unauthenticated GETs), so \code{queryChat()} reads the SSE stream off \code{fetch}'s
+\code{ReadableStream} by hand---splitting on the \code{\textbackslash n\textbackslash n} delimiter,
+dispatching each \code{data:} frame, and recognizing \code{[DONE]}/\code{[ERROR]}. It returns an
+\code{AbortController} so an in-flight answer can be cancelled.
+
+\textbf{SWR for cache-first reads} (\code{lib/hooks.ts}), Table~\ref{tab:swr}:
+
+\begin{table}[h]
+\centering
+\caption{SWR read hooks and their revalidation policies.}
+\label{tab:swr}
+\begin{tabularx}{\linewidth}{l l X}
+\toprule
+\textbf{Hook} & \textbf{Endpoint} & \textbf{Policy}\\
+\midrule
+\code{useSessions()} & \code{GET /chat/sessions} & Background refresh every 30\,s.\\
+\code{useDocuments()} & \code{GET /documents} & \textbf{Adaptive}: 5\,s while any doc is \code{processing}, else 30\,s; raises a toast on \code{processing}$\to$\code{ready}/\code{failed}.\\
+\code{useDepartments()} & \code{GET /departments} & No focus/reconnect revalidation.\\
+\code{useMe()} & \code{GET /auth/me} & Once, cached for the session.\\
+\code{useAnalyticsOverview()} & \code{GET /analytics/overview} & Every 60\,s.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The adaptive document polling tightens the loop only while something is in flight and surfaces
+completion as a toast even to a user who navigated to the chat page.
+
+\section{Key Screens \& Their Data Flows}
+\textbf{The application shell} (\code{(app)/layout.tsx}) is a resizable, collapsible \textbf{ink
+sidebar} on every authenticated page: wordmark, search (\code{Cmd+K}), primary nav (Chat,
+Conversations, Documents, Upload, Meeting, and---admins only---Admin), the last 8 chat sessions, a
+``new chat'' button, and a user pill (avatar initial, name, role badge, department). It owns the
+\textbf{auth gate} (redirect to \code{/login} if not logged in), persists collapse/width state to
+\code{localStorage}, and registers \textbf{global keyboard shortcuts} (\code{Cmd+K} focus search,
+\code{Cmd+N} new chat, \code{Cmd+/} help, \code{Esc} close). Role gating is visual here (the Admin
+link shows only for admins), with real enforcement on the server.
+
+\textbf{Login \& onboarding} (\code{login/page.tsx}) implements the two-step flow of
+Section~\ref{sec:auth} as one screen with a \code{mode} (sign in/up) and a \code{step} (credentials /
+department), saving a fresh token before navigating.
+
+\textbf{Chat} (\code{(app)/chat/page.tsx}), the centerpiece, is a streaming conversation view
+(Figure~\ref{fig:chatseq}). On send it optimistically appends the user bubble and an empty streaming
+assistant bubble, calls \code{queryChat()}, accumulates tokens live via \code{onToken}, stamps the
+wall-clock latency on \code{onDone}, and \code{finalize()} re-fetches the persisted message to attach
+the server-resolved citation sources. It reads \code{?session=} to load a conversation and \code{?doc=}
+to \textbf{scope} retrieval to one document (the backend's \code{document\_id} narrowing). Answers
+render through \code{ChatMessage.tsx}, which strips \code{[Source: N]} into amber citation chips,
+renders Markdown (\code{react-markdown} + \code{remark-gfm}), and shows a \code{filename $\cdot$ p.N}
+source row plus the trace line.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=5mm and 10mm]
+\node[box,minimum width=44mm] (s1) {User types + sends};
+\node[box, below=of s1, minimum width=44mm] (s2) {append user bubble + empty streaming bubble};
+\node[box, below=of s2, minimum width=44mm] (s3) {queryChat(text, sessionId, handlers, docId)};
+\node[box, below=of s3, minimum width=44mm] (s4) {POST /chat/query (SSE)};
+\node[box, below=of s4, minimum width=44mm] (s5) {onToken $\to$ append to bubble (loop)};
+\node[box, below=of s5, minimum width=44mm] (s6) {[DONE] $\to$ onDone stamps traceMs};
+\node[accentbox, below=of s6, minimum width=44mm] (s7) {finalize(): GET messages $\to$ attach sources};
+\draw[arr](s1)--(s2);\draw[arr](s2)--(s3);\draw[arr](s3)--(s4);\draw[arr](s4)--(s5);\draw[arr](s5)--(s6);\draw[arr](s6)--(s7);
+\draw[darr] (s5.east) to[bend left=60] node[lbl,right]{repeat per token} (s4.east);
+\end{tikzpicture}
+\caption{The chat streaming data flow: optimistic bubbles, live token accumulation, latency stamping,
+then a finalize re-fetch to attach server-resolved citations.}
+\label{fig:chatseq}
+\end{figure}
+
+\textbf{Other screens.} \textbf{Documents} list/upload (with adaptive polling and ready/failed toasts)
+plus a per-document detail page that triggers and displays intelligence (Section~\ref{sec:intel}).
+\textbf{Conversations} lists and deletes sessions. \textbf{Meeting} provides the paste-or-upload
+transcript analyzer. \textbf{Admin} renders the six analytics endpoints (via Recharts) and the
+user/department management tables. The public \textbf{landing page} is composed of Nav, Hero, the
+typing TerminalDemo, the feature band, and Footer. \code{lib/exportChat.ts} exports a conversation to
+PDF via the browser print path, and \code{lib/useToast.ts} powers the document-status toasts.
+
+%==============================================================================
+\chapter{Evaluation \& Research}
+\label{ch:eval}
+%==============================================================================
+
+Pragya's research contribution is a controlled comparison of the three retrieval configurations over
+one fixed corpus and thirty ground-truth questions, scored with RAGAS. The harness is in
+\code{backend/evaluation/}; the committed results are in \code{final\_results.json}. This chapter
+reports the methodology and the real numbers in full, including the results that did \emph{not} match
+the intuitive hypothesis.
+
+\section{RAGAS Methodology}
+The harness separates \textbf{generation} (expensive, rate-limited) from \textbf{scoring} (must be
+re-runnable) (Figure~\ref{fig:evalphases}).
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=7mm and 14mm]
+\node[group, label={[lbl]above:Phase 1 --- Generation (Gemini)}] (p1box) {%
+  \begin{tikzpicture}[node distance=5mm]
+  \node[box,minimum width=40mm] (g1) {30 questions $\times$ 3 methods:\\\scriptsize retrieve $\to$ prompt $\to$ Gemini answer};
+  \node[box, below=of g1, minimum width=40mm] (g2) {write results\_<method>.json\\\scriptsize after EVERY question (resumable)};
+  \draw[arr] (g1)--(g2);
+  \end{tikzpicture}};
+\node[box, below left=14mm and -10mm of p1box, minimum width=34mm] (cp) {context\_precision@3\\\scriptsize Groq llama-3.1-8b};
+\node[box, below right=14mm and -10mm of p1box, minimum width=34mm] (fa) {faithfulness@2\\\scriptsize local Ollama qwen2.5:7b};
+\node[accentbox, below=42mm of p1box, minimum width=40mm] (agg) {mean per method $\to$ table\\$\to$ final\_results.json};
+\draw[arr] (p1box.south) -- (cp.north);
+\draw[arr] (p1box.south) -- (fa.north);
+\draw[arr] (cp.south) -- (agg.north);
+\draw[arr] (fa.south) -- (agg.north);
+\end{tikzpicture}
+\caption{Decoupled evaluation: generation writes to disk after every question (resumable on a
+free-tier 429); scoring reads from disk with two independent judges.}
+\label{fig:evalphases}
+\end{figure}
+
+\textbf{Phase 1} retrieves with the given method, builds the \emph{exact same} citation prompt the live
+app uses (reusing \code{build\_citation\_prompt} and \code{\_dedupe\_by\_parent}, so scored contexts are
+byte-for-byte what the model saw), and asks Gemini for a grounded answer, writing results after every
+question (a 429 never re-burns answers). Generation is paced (4\,s between calls, 15\,s every 10
+questions, 30\,s between experiments). The test corpus is auto-selected as the department owning the
+most documents (the Infovance corpus), queried by a mock admin user so the visibility filter admits it.
+
+\textbf{The two metrics, and why only these.} \code{context\_precision@3} (kept --- most directly
+measures retrieval quality, one context per judge call fits the token budget); \code{faithfulness@2}
+(kept, but moved off Groq, Section~\ref{sec:judges}); \code{answer\_relevancy} (excluded --- needs a
+real embedding model the Groq judge lacks, and mostly reflects generation, which is held constant
+across methods).
+
+\textbf{The K-normalization.} Since the methods return different context counts (dense $\approx 8$
+deduped parents, hybrid $\approx 12$, rerank 5), scoring caps to a fixed top-3 (context precision) and
+top-2 (faithfulness), making the comparison a clean precision@$K$. The cited block is always
+\code{[Source: 1]}, so the relevant context is never capped out.
+
+\section{The 30-Question Benchmark Set}
+The benchmark (\code{test\_questions.py}) is 30 ground-truth Q/A pairs authored directly from the six
+core Infovance documents---every question answerable from the text (RAGAS metrics are only meaningful
+when the ground truth is present in the searched corpus). Figure~\ref{fig:cats} shows the category
+distribution.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  xbar, width=11cm, height=5.6cm, bar width=10pt, xmin=0, xmax=6,
+  symbolic y coords={cross-document, onboarding, engineering, finance, helpdesk, security, hr},
+  ytick=data, nodes near coords, nodes near coords style={font=\scriptsize},
+  xlabel={\# questions}, enlarge y limits=0.12, xmajorgrids, tick label style={font=\small},
+]
+\addplot[fill=amber, draw=amberdark] coordinates {
+  (5,hr) (4,security) (4,helpdesk) (5,finance) (4,engineering) (4,onboarding) (4,cross-document)};
+\end{axis}
+\end{tikzpicture}
+\caption{Benchmark composition: 30 questions across seven categories ($\geq 4$ per source document).
+The \emph{cross-document} category pairs facts that each live in only one document, so a correct answer
+requires retrieving from two documents at once.}
+\label{fig:cats}
+\end{figure}
+
+\begin{divergence}
+\code{CLAUDE.md} describes ``50 fixed test questions.'' The implemented and committed benchmark contains
+\textbf{30}. This report uses the real number throughout. Thirty questions across seven categories is a
+defensible size for a single-corpus comparison; the gap from the planned 50 is noted honestly.
+\end{divergence}
+
+Representative questions (verbatim): \emph{Q1 (hr)} ``How many casual leaves are employees entitled to
+per year?'' ($\to$ 12 days, lapses); \emph{Q6 (security)} ``minimum password length and rotation?''
+($\to$ 12 chars, every 90 days); \emph{Q15 (finance)} ``approving authority above INR 50,000?'' ($\to$
+the CFO); \emph{Q27 (cross-document)} combines the Security Policy (five failed attempts) and the
+Helpdesk SOP (a P2 ticket).
+
+\section{The Two-Independent-Judge Design}
+\label{sec:judges}
+The central safeguard: \textbf{no model grades its own output}. Three different models span generation
+and scoring (Table~\ref{tab:judges}).
+
+\begin{table}[h]
+\centering
+\caption{The three models---generator plus two independent judges.}
+\label{tab:judges}
+\begin{tabularx}{\linewidth}{l l X}
+\toprule
+\textbf{Role} & \textbf{Model} & \textbf{Why}\\
+\midrule
+Generator & Gemini \code{gemini-3.1-flash-lite} & The system's real chat model; fast, free-tier.\\
+Context-precision judge & Groq \code{llama-3.1-8b-instant} & Independent; one context per call fits the budget.\\
+Faithfulness judge & \emph{local} Ollama \code{qwen2.5:7b} & Independent; runs locally, no rate limit.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\textbf{Why faithfulness moved to a local model.} Faithfulness packs all contexts into a single
+$\sim$6--12k-token NLI call; the Groq free tier caps a request at 6000 tokens/minute (HTTP 413), and
+\code{llama-3.1-8b} could not reliably emit the parseable JSON its statement-extraction needs---both
+confirmed empirically. The fix was a local \code{qwen2.5:7b} (no token limit, clean JSON), still
+independent of the generator. Even this needed care: Ollama defaults to a $\sim$4k window, which a
+top-2 prompt of two $\sim$2k-token parents overflows into a runaway generation; the harness sets
+\code{num\_ctx = 8192}, caps \code{num\_predict = 2048}, and adds a hard 300\,s per-question timeout.
+
+\section{Results}
+\label{sec:results}
+The headline comparison from \code{final\_results.json} (means over 30 questions; context precision is
+precision@3 by Groq, faithfulness is @2 by local qwen2.5):
+
+\begin{table}[h]
+\centering
+\caption{RAGAS comparison of the three retrieval methods.}
+\label{tab:results}
+\begin{tabular}{l c c c c}
+\toprule
+\textbf{Method} & \textbf{Faithfulness} & \textbf{Context Precision} & \textbf{Average} & \textbf{Cells scored}\\
+\midrule
+Dense (A) & 0.873 & 0.936 & \textbf{0.905} & 30 / 30\\
+Hybrid (B) & 0.886 & 0.928 & \textbf{0.907} & 29 / 30\\
+Hybrid + Rerank (C) & 0.750 & 0.900 & \textbf{0.825} & 30 / 30\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  ybar, width=12.5cm, height=6.2cm, bar width=15pt,
+  ymin=0.70, ymax=0.97, ylabel={Score (higher is better)},
+  symbolic x coords={A,B,C}, xtick=data,
+  xticklabels={Dense (A), Hybrid (B), Hybrid+Rerank (C)},
+  nodes near coords, nodes near coords style={font=\scriptsize, /pgf/number format/fixed, /pgf/number format/precision=3},
+  enlarge x limits=0.25, ymajorgrids, legend pos=south west,
+  legend style={font=\small}, tick label style={font=\small},
+]
+\addplot[fill=ink, draw=ink] coordinates {(A,0.873)(B,0.886)(C,0.750)};
+\addplot[fill=amber, draw=amberdark] coordinates {(A,0.936)(B,0.928)(C,0.900)};
+\legend{Faithfulness, Context precision}
+\end{axis}
+\end{tikzpicture}
+\caption{RAGAS scores by retrieval method. Context precision (amber) is high and similar across all
+three; faithfulness (ink) collapses for hybrid+rerank---the headline negative result.}
+\label{fig:results}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  width=12.5cm, height=4.6cm, ybar, bar width=22pt,
+  ymin=0.80, ymax=0.92, ylabel={Average score},
+  symbolic x coords={A,B,C}, xtick=data,
+  xticklabels={Dense (A), Hybrid (B), Hybrid+Rerank (C)},
+  nodes near coords, nodes near coords style={font=\small, /pgf/number format/fixed, /pgf/number format/precision=3},
+  enlarge x limits=0.3, ymajorgrids, tick label style={font=\small},
+]
+\addplot[fill=amber, draw=amberdark] coordinates {(A,0.905)(B,0.907)(C,0.825)};
+\end{axis}
+\end{tikzpicture}
+\caption{Average of the two metrics. Hybrid (B) edges out dense (A) by only $0.002$; hybrid+rerank (C)
+is clearly worst. The A--B near-tie is consistent with the non-functional sparse channel
+(Section~\ref{sec:sparse}).}
+\label{fig:avg}
+\end{figure}
+
+The A$\to$C change per metric: faithfulness \textbf{$-0.123$} ($0.873 \to 0.750$) and context precision
+\textbf{$-0.036$} ($0.936 \to 0.900$). Adding the full reranking stage moved \emph{both} metrics in the
+wrong direction on this corpus.
+
+\section{Honest Findings \& Limitations}
+\label{sec:findings}
+\paragraph{Finding 1 --- Hybrid is best, but only barely; dense is essentially tied.} Hybrid (B) takes
+the top average ($0.907$) over dense ($0.905$)---a difference of $0.002$, within noise. On this corpus,
+adding the sparse channel barely changed anything, exactly as Section~\ref{sec:sparse} predicts: the
+sparse vectors do not align between ingestion and query, so ``hybrid'' is effectively dense fused with a
+near-empty list. A working sparse channel is the single change most likely to separate B from A.
+
+\paragraph{Finding 2 --- Reranking \emph{degraded} quality, via over-pruning.} The most elaborate
+pipeline (C) scored \emph{lowest}, and the damage is concentrated in faithfulness ($0.87$--$0.89 \to
+0.75$). The plausible mechanism is over-pruning: cutting to a top-5 of parents sometimes drops a context
+block the answer needed, and an answer missing a supporting source is judged less faithful. On a small,
+clean, single-domain corpus where dense retrieval is already precise, the cross-encoder's pruning
+removes more signal than its reranking adds. \textbf{More pipeline is not automatically better}---and it
+took a real evaluation to show it.
+
+\paragraph{Finding 3 --- The differences are small because the corpus is easy.} All three methods score
+$0.90+$ on context precision and $\geq 0.75$ on faithfulness. Six well-structured policy documents with
+distinct vocabularies are a relatively easy retrieval target; the methods would likely separate more on
+a larger, noisier, more overlapping corpus.
+
+\paragraph{Limitations, stated plainly.}
+\begin{itemize}
+  \item \textbf{The sparse channel is non-functional} (Section~\ref{sec:sparse}), so ``hybrid'' here is
+  not a fully realized hybrid; read the B-vs-A comparison with that caveat.
+  \item \textbf{One faithfulness cell is missing for hybrid} (29/30 scored---one question timed out on
+  the local 7B and was recorded as NaN, then excluded), so hybrid's faithfulness is a mean over 29.
+  \item \textbf{The K-asymmetry} is controlled by capping to precision@3 / faithfulness@2, a
+  normalization rather than a perfect equalization.
+  \item \textbf{Judges are 7--8B models}---independent of the generator (the key property) but smaller
+  than a frontier judge; absolute scores would shift, though the relative ordering is the load-bearing
+  result.
+  \item \textbf{Single corpus, single run} (30 questions, one pass): the findings are directional, not
+  statistically powered.
+\end{itemize}
+
+\begin{observation}
+Despite the limitations, the study does what many RAG write-ups do not: a genuine controlled comparison
+with bias-controlled judges, reporting a \textbf{negative result honestly}---that the reranker hurt on
+this corpus and the sparse channel added nothing. For an internship project aimed at a research venue,
+the discipline to find and report those results is as valuable as a clean win would have been.
+\end{observation}
+
+%==============================================================================
+\chapter{Engineering Journey}
+\label{ch:journey}
+%==============================================================================
+
+\section{The Chronological Build}
+Pragya was built one module per session in a fixed dependency order, each tested via the interactive
+\code{/docs} (or the UI) and git-committed before the next (Figure~\ref{fig:buildorder}).
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=3.5mm and 7mm]
+\node[box,minimum width=20mm,font=\scriptsize] (f) {1 Foundation};
+\node[box, right=of f,minimum width=18mm,font=\scriptsize] (a) {2 Auth+RBAC};
+\node[box, right=of a,minimum width=18mm,font=\scriptsize] (i) {3 Ingestion};
+\node[box, right=of i,minimum width=18mm,font=\scriptsize] (r) {4 RAG chat};
+\node[box, below=8mm of r,minimum width=20mm,font=\scriptsize] (d) {5 Doc intel};
+\node[box, left=of d,minimum width=20mm,font=\scriptsize] (c) {6 History};
+\node[box, left=of c,minimum width=18mm,font=\scriptsize] (an) {7 Analytics};
+\node[box, left=of an,minimum width=18mm,font=\scriptsize] (m) {8 Meeting};
+\node[accentbox, below=8mm of m,minimum width=20mm,font=\scriptsize] (e) {+ RAGAS eval};
+\draw[arr](f)--(a);\draw[arr](a)--(i);\draw[arr](i)--(r);\draw[arr](r)--(d);
+\draw[arr](d)--(c);\draw[arr](c)--(an);\draw[arr](an)--(m);\draw[arr](m)--(e);
+\end{tikzpicture}
+\caption{The disciplined module build order. The RAG chat module (4) was itself built incrementally:
+dense $\to$ +BM25 $\to$ +RRF $\to$ +reranker---the same structure as the research comparison.}
+\label{fig:buildorder}
+\end{figure}
+
+\section{Key Bugs \& Fixes}
+Each of the following is a real problem encountered and resolved; several left permanent fingerprints
+(pinned versions, migrations, defensive comments).
+
+\begin{small}
+\begin{longtable}{L{3.0cm} L{4.6cm} X}
+\caption{Notable bugs found and fixed during the build.}\label{tab:bugs}\\
+\toprule
+\textbf{Issue} & \textbf{Symptom} & \textbf{Fix}\\
+\midrule
+\endfirsthead
+\toprule \textbf{Issue} & \textbf{Symptom} & \textbf{Fix}\\ \midrule
+\endhead
+\bottomrule
+\endfoot
+Postgres driver / async & The default \code{psycopg2} is synchronous and cannot back an async engine; Neon mandates SSL. & Use \code{postgresql+asyncpg://}; pass \code{connect\_args=\{"ssl": True\}} (off the URL); \code{pool\_pre\_ping=True} for idle drops.\\
+Naive timestamps & \code{datetime.utcnow()} is deprecated and naive, causing tz-ambiguous comparisons and JWT \code{exp} drift. & Migration converted every column to \code{TIMESTAMPTZ}; \code{\_utcnow()} returns \code{datetime.now(timezone.utc)}.\\
+bcrypt / passlib crash & passlib 1.7.4 reads the removed \code{bcrypt.\_\_about\_\_.\_\_version\_\_} and crashes on bcrypt $\geq$ 4.1. & Pin \code{bcrypt==4.0.1}.\\
+Groq TPM ceiling & Faithfulness packs all contexts into one $\sim$6--12k-token call; Groq free caps 6000 TPM (HTTP 413); llama-3.1-8b couldn't emit parseable JSON. & Move faithfulness to a local Ollama \code{qwen2.5:7b}; keep context precision on Groq.\\
+qwen context overflow & Ollama's $\sim$4k default window overflowed on a top-2 prompt, triggering a runaway generation. & \code{num\_ctx=8192}, \code{num\_predict=2048}, hard 300\,s per-question timeout.\\
+Sparse vectors added late & Existing points had no sparse vector after the channel was introduced. & \code{reindex\_document} / \code{POST /documents/reindex-all} re-upsert dense+sparse, reusing \code{qdrant\_point\_id}; also backfills \code{visibility}/\code{uploaded\_by} payload.\\
+Boilerplate contamination & Repeated letterhead made chunks from different docs look similar, diluting embeddings. & Two-pass \code{\_strip\_boilerplate} before chunking.\\
+Over-citation / dup parents & Overlapping children mapped to the same parent. & \code{\_dedupe\_by\_parent} (first-200-char key), shared by prompt-building and source-extraction.\\
+Qdrant client API change & \code{qdrant-client} 1.18 removed \code{client.search(...)}. & Switch to \code{client.query\_points(query=..., using="dense"|"sparse")}.\\
+Embedding deprecation & \code{text-embedding-004} was deprecated 2026-01-14. & Move to \code{gemini-embedding-001} with Matryoshka 3072$\to$768.\\
+\end{longtable}
+\end{small}
+
+The sparse-channel index/hash defect (Section~\ref{sec:sparse}) is the one significant bug that remains
+\emph{open} in the evaluated build; it is documented rather than silently patched so the
+Chapter~\ref{ch:eval} numbers stay attributable to the measured system.
+
+\section{Known Limitations \& Future Work}
+\begin{small}
+\begin{longtable}{L{2.6cm} L{5.0cm} X}
+\caption{Known limitations and future work.}\label{tab:future}\\
+\toprule \textbf{Area} & \textbf{Limitation} & \textbf{Future work}\\ \midrule
+\endfirsthead
+\toprule \textbf{Area} & \textbf{Limitation} & \textbf{Future work}\\ \midrule
+\endhead
+\bottomrule
+\endfoot
+Sparse retrieval & Ingestion/query hash indices don't align (100k vs 30k; salted \code{hash()}). & Stable hash (\code{hashlib}) with a shared space, or a learned encoder (SPLADE / FastEmbed BM25).\\
+Faithfulness judge & A local 7B is weaker than the generator; one cell timed out. & A paid Groq tier or a frontier judge.\\
+Reranking & Degrades faithfulness via over-pruning on this corpus. & Adaptive top-$n$; skip rerank when dense confidence is high.\\
+Scanned PDFs & Image-only pages are skipped. & OCR (e.g. Tesseract) as a fallback.\\
+SSE framing & A token with a newline breaks strict one-frame-per-token SSE. & One \code{data:} line per token line (lossless).\\
+Token approximation & Chunks sized in words at 0.75, not exact tokens. & Use the model's tokenizer for exact budgets.\\
+Evaluation power & Single corpus, 30 questions, one run; 50 planned. & Larger/noisier corpus, 50 questions, multiple runs, \code{answer\_relevancy}.\\
+Ops & Dev CORS permissive; Qdrant calls synchronous; corpus-specific boilerplate. & Restrict CORS; \code{AsyncQdrantClient}; per-tenant boilerplate config.\\
+\end{longtable}
+\end{small}
+
+\section{Deployment Notes}
+\textbf{Components.} Backend (FastAPI via Uvicorn: \code{uvicorn main:app --reload --app-dir backend};
+startup validates config, creates tables in dev, seeds 12 departments, bootstraps the Qdrant
+collection; production uses \code{alembic upgrade head}); Qdrant in Docker at \code{localhost:6333};
+Neon serverless PostgreSQL (SSL); frontend (\code{npm run dev} / \code{build \&\& start} with
+\code{NEXT\_PUBLIC\_API\_URL}); and---evaluation only---a local Ollama running \code{qwen2.5:7b} plus
+Groq keys. \code{GET /health} is an unauthenticated liveness probe.
+
+\begin{table}[h]
+\centering
+\caption{Environment variables (\code{.env}, loaded by pydantic-settings).}
+\label{tab:env}
+\begin{tabularx}{\linewidth}{l X l}
+\toprule
+\textbf{Variable} & \textbf{Purpose} & \textbf{Req.}\\
+\midrule
+\code{DATABASE\_URL} & Neon Postgres (\code{postgresql+asyncpg://}, SSL) & yes\\
+\code{GEMINI\_API\_KEY} & Gemini embeddings + chat & yes\\
+\code{GEMINI\_CHAT\_MODEL} & Chat model id (in config, not hardcoded) & yes\\
+\code{SECRET\_KEY} & JWT signing (64-char hex) & yes\\
+\code{QDRANT\_URL} / \code{QDRANT\_COLLECTION} & \code{localhost:6333} / \code{pragya\_docs} & default\\
+\code{GEMINI\_EMBEDDING\_MODEL} / \code{\_DIMENSIONS} & \code{gemini-embedding-001} / \code{768} & default\\
+\code{ALGORITHM} / \code{ACCESS\_TOKEN\_EXPIRE\_HOURS} & \code{HS256} / \code{8} & default\\
+\code{MAX\_UPLOAD\_SIZE\_MB} / \code{EMBEDDING\_BATCH\_SIZE} & \code{50} / \code{20} & default\\
+\code{APP\_ENV} & \code{development} (drives SQL echo) & default\\
+\code{GROQ\_API\_KEY} (\code{\_2}, \code{\_3}) & RAGAS context-precision judge (eval only) & optional\\
+\code{NEXT\_PUBLIC\_API\_URL} & Frontend $\to$ backend base URL & frontend\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\code{validate\_settings()} fails fast at startup if any required key is missing or blank.
+
+%==============================================================================
+\chapter{Synthesis \& Conclusions}
+\label{ch:synthesis}
+%==============================================================================
+
+This chapter draws together the report's threads into a set of observations and conclusions derived
+from the system and its data---the author's own analysis rather than a restatement of the code.
+
+\section{The Architecture's Central Bet Paid Off}
+Pragya's defining structural decision---enforcing access control \emph{inside} the vector-database
+query rather than in application logic---is validated by how cleanly the rest of the system composes
+around it. Because the visibility filter is a single shared object (Section~\ref{sec:visibility}), chat,
+document search, and document-scoped retrieval all inherit identical access semantics for free, and the
+``personal'' privacy guarantee holds even against admins. The same denormalize-into-the-payload move
+that enables this also removes a database round-trip at generation time (parent text travels with the
+vector). One decision buys correctness \emph{and} performance---the hallmark of a good architectural
+bet.
+
+\section{The Data Tells a Coherent Story}
+The three most striking numbers in the evaluation are not independent---they are the same phenomenon
+seen three ways. The near-tie between dense ($0.905$) and hybrid ($0.907$), the documented sparse-index
+defect (Section~\ref{sec:sparse}), and the small absolute spread of all scores are mutually consistent:
+\textbf{a corpus easy enough that dense retrieval alone nearly saturates the metrics leaves little room
+for any second signal to matter}---and the second signal (sparse) is, in this build, not actually
+present. The evaluation thus measures two things at once: the retrieval methods, and the corpus's
+difficulty. A harder corpus is the lever that would make the method differences legible.
+
+\section{Cost Versus Quality --- The Reranker's Verdict}
+Plotting the three methods on cost against average quality (Figure~\ref{fig:costquality}) makes the
+central engineering lesson visual: the most expensive method is also the worst. Dense and hybrid sit at
+the efficient frontier; the reranker pays the most (a forward pass over $\sim$40 pairs) to land lowest.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  width=11.5cm, height=6cm, xlabel={Relative retrieval cost $\to$}, ylabel={Average RAGAS score},
+  xmin=0.5, xmax=3.5, ymin=0.80, ymax=0.93, xtick={1,2,3},
+  xticklabels={dense\\(1 search), hybrid\\(2 searches), hybrid+rerank\\(+$\sim$40 cross-enc.)},
+  xticklabel style={align=center, font=\scriptsize}, ymajorgrids, tick label style={font=\small},
+]
+\addplot[only marks, mark=*, mark size=3.2pt, color=amberdark] coordinates {(1,0.905)(2,0.907)(3,0.825)};
+\node[anchor=south, font=\scriptsize] at (axis cs:1,0.905) {Dense 0.905};
+\node[anchor=south, font=\scriptsize] at (axis cs:2,0.907) {Hybrid 0.907};
+\node[anchor=north, font=\scriptsize] at (axis cs:3,0.825) {Rerank 0.825};
+\end{axis}
+\end{tikzpicture}
+\caption{Cost versus quality. On this corpus, increasing pipeline cost did not increase quality; the
+cheapest two methods are the best, and the most expensive is the worst---a concrete instance of
+``more pipeline is not automatically better.''}
+\label{fig:costquality}
+\end{figure}
+
+\section{What This Project Demonstrates}
+Three things stand out as the project's real contributions. \textbf{Engineering breadth}: a working
+full-stack system spanning async Python, two databases, an LLM integration with streaming, a learned
+reranker, and a modern React frontend---each built to a stated standard and committed incrementally.
+\textbf{Engineering honesty}: a known defect (the sparse channel) documented and quantified rather than
+hidden, and a negative research result (the reranker hurt) reported rather than buried. \textbf{Research
+discipline}: a controlled comparison with bias-controlled judges that produces a defensible, if
+modest, finding. For an internship aimed at both an industry deliverable and graduate study, this
+combination---a real system, measured rigorously, reported truthfully---is the strongest possible
+outcome.
+
+%==============================================================================
+\appendix
+%==============================================================================
+
+\chapter{API Endpoint Reference}
+\label{app:api}
+All routes are mounted in \code{main.py}. ``Auth'' = requires a valid bearer token; ``Admin'' = requires
+\code{role == "admin"}.
+
+\begin{small}
+\begin{longtable}{l L{5.4cm} c X}
+\caption{Complete API endpoint reference.}\label{tab:api}\\
+\toprule \textbf{Method} & \textbf{Path} & \textbf{Auth} & \textbf{Purpose}\\ \midrule
+\endfirsthead
+\toprule \textbf{Method} & \textbf{Path} & \textbf{Auth} & \textbf{Purpose}\\ \midrule
+\endhead
+\bottomrule
+\endfoot
+GET & \code{/health} & --- & Liveness probe.\\
+POST & \code{/auth/register} & --- & Create account; first user $\to$ admin. Returns JWT.\\
+POST & \code{/auth/login} & --- & Email + password $\to$ JWT.\\
+GET & \code{/auth/me} & Auth & Current user profile.\\
+PATCH & \code{/auth/me} & Auth & Self-assign department; fresh JWT.\\
+POST & \code{/departments} & Auth* & Create department (*bootstrap when empty, else admin).\\
+GET & \code{/departments} & Auth & List departments.\\
+GET & \code{/admin/users} & Admin & Users with department names.\\
+GET & \code{/admin/departments} & Admin & Departments with member counts.\\
+PATCH & \code{/admin/users/\{id\}/role} & Admin & Change a user's role (own-admin guard).\\
+POST & \code{/documents/upload} & Auth & Upload PDF/DOCX/PPTX (202 + background ingest).\\
+GET & \code{/documents} & Auth & List accessible documents (visibility-aware).\\
+GET & \code{/documents/search} & Auth & Semantic dense search (visibility-filtered).\\
+POST & \code{/documents/reindex-all} & Admin & Re-embed all ready docs (dense + sparse).\\
+POST & \code{/documents/\{id\}/reindex} & Auth & Re-index one document.\\
+GET & \code{/documents/\{id\}/status} & Auth & Poll ingestion status.\\
+POST & \code{/chat/query} & Auth & Ask a question $\to$ SSE-streamed grounded answer.\\
+GET & \code{/chat/sessions} & Auth & List conversations.\\
+DELETE & \code{/chat/sessions/\{id\}} & Auth & Delete a conversation.\\
+GET & \code{/chat/sessions/\{id\}/messages} & Auth & Full transcript (owner only).\\
+POST & \code{/intelligence/\{id\}} & Auth & Trigger/return intelligence (200 cached / 202 scheduled).\\
+GET & \code{/intelligence/\{id\}} & Auth & Fetch generated intelligence.\\
+GET & \code{/analytics/overview} & Admin & Headline metric cards.\\
+GET & \code{/analytics/top-queries} & Admin & Most-repeated topics.\\
+GET & \code{/analytics/unanswered} & Admin & Recent unanswered questions.\\
+GET & \code{/analytics/document-usage} & Admin & Documents by \code{chunk\_count} proxy.\\
+GET & \code{/analytics/queries-over-time} & Admin & Daily counts (30 days, zero-filled).\\
+GET & \code{/analytics/department-activity} & Admin & Per-department query/doc/user counts.\\
+POST & \code{/meeting/process} & Auth & Analyze a pasted transcript.\\
+POST & \code{/meeting/upload} & Auth & Analyze an uploaded \code{.txt}/\code{.pdf} transcript.\\
+\end{longtable}
+\end{small}
+
+\chapter{Glossary}
+\label{app:glossary}
+\begin{description}
+  \item[RAG (Retrieval-Augmented Generation)] Answering with an LLM whose input is augmented by
+  passages retrieved from a corpus, grounding answers in real sources.
+  \item[Embedding] A fixed-length vector representing the meaning of text, so similar meanings are
+  nearby.
+  \item[Dense vector / retrieval] Retrieval by embedding similarity (meaning-based); Pragya uses 768-d
+  Gemini embeddings compared by cosine.
+  \item[Sparse vector / BM25] Retrieval by keyword overlap; mostly zeros, with non-zero entries at
+  hashed word indices weighted by term frequency.
+  \item[Hybrid retrieval] Combining dense and sparse to capture both meaning and exact keywords.
+  \item[RRF (Reciprocal Rank Fusion)] A parameter-free merge of two ranked lists by summing
+  $1/(k+\text{rank})$ ($k=60$); rewards items ranked well by both retrievers.
+  \item[Bi-encoder] Encodes query and document independently, then compares vectors (cheap).
+  \item[Cross-encoder] Feeds the (query, document) pair through a transformer together for a joint
+  relevance score (accurate, costly).
+  \item[Reranking] Re-scoring a small candidate set with a cross-encoder and keeping the best few.
+  \item[Hierarchical chunking] Small \emph{child} chunks (precise retrieval) nested in larger
+  \emph{parent} chunks (richer generation context); retrieve on children, generate from parents.
+  \item[Matryoshka embedding] An embedding whose any prefix is itself valid, allowing truncation
+  (3072$\to$768) with minimal quality loss.
+  \item[Asymmetric embedding] Embedding queries and documents with different task-type hints so they
+  map into a shared space.
+  \item[Qdrant] The vector database storing dense + sparse vectors and access-control payload.
+  \item[SSE (Server-Sent Events)] A one-way HTTP streaming format (\code{data: ...}) used to stream
+  answer tokens.
+  \item[JWT (JSON Web Token)] A signed, stateless token carrying user id, department, and role.
+  \item[RBAC (Role-Based Access Control)] Restricting actions by role and, here, retrieval by
+  department/visibility tier.
+  \item[Hallucination] An LLM producing confident but unsupported content; guarded by constraining the
+  model to retrieved context.
+  \item[RAGAS] A framework of LLM-as-judge metrics for evaluating RAG systems.
+  \item[Faithfulness] The degree to which an answer's claims are supported by the retrieved contexts.
+  \item[Context precision] The degree to which the retrieved contexts are relevant to the ground-truth
+  answer.
+  \item[NLI (Natural Language Inference)] Judging whether a statement is entailed by a text; the
+  mechanism behind faithfulness.
+\end{description}
+
+\vspace{1.2cm}
+\begin{center}
+{\color{ink}\rule{0.6\linewidth}{0.8pt}}\\[6pt]
+{\itshape\color{amberdark} Pragya · प्रज्ञा --- every answer, with its source.}
+\end{center}
+
+\end{document}
