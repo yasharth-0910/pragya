@@ -355,7 +355,8 @@ retrieved.
 \end{tikzpicture}
 \caption{Retrieval pipeline. Method~A (dense) uses only the dense branch;
 Method~B (hybrid) adds the sparse branch and RRF fusion (Eq.~\ref{eq:rrf});
-Method~C adds cross-encoder reranking to the top~5 parent chunks. Generation is
+Method~C adds cross-encoder reranking to the top~8
+candidates under a per-source diversity cap. Generation is
 identical for all three.}
 \label{fig:pipeline}
 \end{figure}
@@ -641,4 +642,3 @@ clean corpora.
 \bibliography{references}
 
 \end{document}
-
