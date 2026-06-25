@@ -20,6 +20,7 @@ hardcoded.
 """
 
 import asyncio
+import hashlib
 import io
 import logging
 import re
@@ -29,7 +30,7 @@ import fitz  # PyMuPDF — keeps page numbers, which our citations depend on.
 import google.generativeai as genai
 from docx import Document as DocxDocument
 from pptx import Presentation
-from qdrant_client.models import PointStruct, SparseVector
+from qdrant_client.models import FieldCondition, Filter, FilterSelector, MatchValue, PointStruct, SparseVector
 from sqlalchemy import select
 
 from config import get_settings
@@ -386,10 +387,12 @@ async def embed_chunks(texts: list[str]) -> list[list[float]]:
 def build_sparse_vector(text: str) -> SparseVector:
     """Build a BM25-approximate sparse vector (TF-weighted, hash-indexed).
 
-    Index = abs(hash(word)) % 100_000; value = term frequency. Hash collisions
-    (two words sharing an index) sum their TF — rare enough not to matter.
-    This is a good-enough approximation for the research comparison in CLAUDE.md §10;
-    production would use SPLADE or a learned sparse encoder.
+    Index = MD5(word) % 100_000; value = term frequency. We use hashlib.md5
+    instead of Python's built-in hash() because hash() is randomized per process
+    (PYTHONHASHSEED). A random seed means the same word gets a different index on
+    every restart, so query and document sparse vectors never overlap. MD5 is
+    stable, fast, and well-distributed — correct for a research BM25 approximation.
+    Production would use SPLADE or FastEmbed BM25.
     """
     tokens = re.sub(r"[^a-z0-9\s]", " ", text.lower()).split()
     if not tokens:
@@ -400,7 +403,7 @@ def build_sparse_vector(text: str) -> SparseVector:
         counts[tok] = counts.get(tok, 0) + 1
     index_values: dict[int, float] = {}
     for word, count in counts.items():
-        idx = abs(hash(word)) % 100_000
+        idx = int(hashlib.md5(word.encode()).hexdigest(), 16) % 100_000
         index_values[idx] = index_values.get(idx, 0.0) + count / total
     indices = list(index_values.keys())
     values = [index_values[i] for i in indices]
@@ -459,6 +462,24 @@ def upsert_to_qdrant(
         )
     _batch_upsert_points(points)
     return point_ids
+
+
+def delete_document_vectors(document_id: uuid.UUID) -> None:
+    """Delete every Qdrant point whose payload.document_id matches this doc.
+
+    Sync + filter-based: idempotent (safe to call even if vectors were never
+    upserted). Run via asyncio.to_thread so the event loop stays free.
+    """
+    settings = get_settings()
+    client = get_qdrant_client()
+    client.delete(
+        collection_name=settings.QDRANT_COLLECTION,
+        points_selector=FilterSelector(
+            filter=Filter(must=[
+                FieldCondition(key="document_id", match=MatchValue(value=str(document_id)))
+            ])
+        ),
+    )
 
 
 async def reindex_document(

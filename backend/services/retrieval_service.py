@@ -21,6 +21,7 @@ Two hard rules run through every function here:
 """
 
 import asyncio
+import hashlib
 import logging
 import time
 import uuid
@@ -46,11 +47,9 @@ logger = logging.getLogger(__name__)
 # separate on purpose so the two task types can never be accidentally shared.
 EMBED_TASK_QUERY = "retrieval_query"
 
-# Size of the sparse index space. Every query word is hashed into [0, 30000). Big
-# enough that hash collisions between distinct words are rare; small enough to keep
-# the sparse vector cheap. This must stay stable across ingestion and query, or the
-# same word would land on different indices and never match.
-SPARSE_INDEX_SPACE = 30000
+# Size of the sparse index space. Must match ingestion_service.build_sparse_vector().
+# 100_000 reduces hash collisions vs the old 30_000.
+SPARSE_INDEX_SPACE = 100_000
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -187,7 +186,7 @@ def sparse_retrieve(
     # one term — matching is case-insensitive.
     tf_by_index: dict[int, float] = {}
     for word in query.lower().split():
-        index = abs(hash(word)) % SPARSE_INDEX_SPACE
+        index = int(hashlib.md5(word.encode()).hexdigest(), 16) % SPARSE_INDEX_SPACE
         tf_by_index[index] = tf_by_index.get(index, 0.0) + 1.0
 
     # Empty query (or all-whitespace) → no sparse signal. Return nothing rather than
@@ -274,7 +273,7 @@ def rrf_fusion(
 # ──────────────────────────────────────────────────────────────────────────────
 # Function 5: cross-encoder rerank — the full pipeline, Experiment C
 # ──────────────────────────────────────────────────────────────────────────────
-def rerank(query: str, candidates: list[dict], top_n: int = 5) -> list[dict]:
+def rerank(query: str, candidates: list[dict], top_n: int = 8) -> list[dict]:
     """Re-score candidates with a cross-encoder and keep the top_n.
 
     WHY THIS BEATS THE RETRIEVERS: dense and sparse are BI-encoders — query and
@@ -306,9 +305,23 @@ def rerank(query: str, candidates: list[dict], top_n: int = 5) -> list[dict]:
     for candidate, score in zip(candidates, scores):
         candidate["rerank_score"] = float(score)
 
-    # Highest reranker score first; keep only the top_n parents for generation.
+    # Highest reranker score first, then apply source diversity: cap at 2 chunks
+    # per source document so one highly-relevant document can't monopolise all
+    # slots and crowd out a second document that answers another part of the query.
+    # Without this, a two-topic question (e.g. probation period + password policy)
+    # loses because the more literally-matched document fills every slot.
     ranked = sorted(candidates, key=lambda c: c["rerank_score"], reverse=True)
-    return ranked[:top_n]
+    selected: list[dict] = []
+    source_counts: dict[str, int] = {}
+    for candidate in ranked:
+        source = candidate["payload"].get("source_filename", "")
+        if source_counts.get(source, 0) >= 2:
+            continue
+        source_counts[source] = source_counts.get(source, 0) + 1
+        selected.append(candidate)
+        if len(selected) >= top_n:
+            break
+    return selected
 
 
 # ──────────────────────────────────────────────────────────────────────────────
