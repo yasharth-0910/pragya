@@ -20,6 +20,7 @@ A Comparative Study}
 \author{%
 \IEEEauthorblockN{Yasharth Singh}
 \IEEEauthorblockA{%
+Dept. of Computer Science and Engineering\\
 Jaypee Institute of Information Technology\\
 Noida, India\\
 \texttt{yasharthsingh0910@gmail.com}}
@@ -40,16 +41,19 @@ rank fusion (RRF), and (C) hybrid retrieval followed by cross-encoder
 reranking. Pragya uses hierarchical chunking, asymmetric Gemini embeddings
 truncated to 768 dimensions, and a three-tier access-control filter enforced at
 the vector-database layer. We evaluate all three strategies on a fixed
-six-document corpus and 30 ground-truth question--answer pairs, scoring
+seven-document corpus and 30 ground-truth question--answer pairs, scoring
 faithfulness and context precision with two \emph{independent} judge models
 distinct from the answer generator, eliminating self-evaluation bias. Hybrid
-retrieval attains the best average score (0.907), narrowly ahead of dense
-(0.905), while reranking is clearly worst (0.825): its faithfulness drops from
-0.873 (dense) to 0.750. We trace this collapse to over-pruning: on a small,
-clean corpus the cross-encoder, combined with parent-chunk deduplication,
-starves the generator down to one or two context blocks. Our results push back
-on the assumption that reranking is uniformly beneficial and show that the value
-of each retrieval stage is contingent on corpus characteristics.
+retrieval attains the best average score (0.914), ahead of dense (0.903) on
+\emph{both} metrics, though by small margins (faithfulness 0.890 vs.\ 0.873;
+context precision 0.939 vs.\ 0.933); the sparse channel is active, changing the
+retrieved context on all 30 questions. Reranking is clearly worst (0.840): its
+faithfulness drops from 0.873 (dense) to 0.777. We trace this to over-pruning:
+on a small, clean corpus the cross-encoder, combined with a per-source diversity
+cap and parent-chunk deduplication, reduces the generator's context to about
+four blocks. Our results push back on the assumption that reranking is uniformly
+beneficial and show that the value of each retrieval stage is contingent on
+corpus characteristics.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -86,8 +90,8 @@ that each added stage monotonically improves answer quality.
 
 We test that assumption empirically. Using Pragya, a working enterprise RAG
 platform whose retrieval core implements all three strategies behind a single
-interface, we run a controlled comparison on a real enterprise corpus of six
-corporate-policy documents and 30 ground-truth question--answer pairs. We
+interface, we run a controlled comparison on a real enterprise corpus of seven
+documents and 30 ground-truth question--answer pairs. We
 evaluate faithfulness and context precision with two judge models that are
 \emph{independent} of the answer generator, which removes the self-evaluation
 bias that arises when a model grades its own output.
@@ -101,9 +105,9 @@ Our contributions are:
         a transparent account of its asymmetries.
   \item An empirical finding that contradicts the "reranking always helps"
         default: on a small, clean corpus, cross-encoder reranking degrades
-        faithfulness by 0.12 absolute through context over-pruning, and the
-        sparse channel adds almost nothing, so retrieval-stage value is
-        corpus-dependent.
+        faithfulness by 0.10 absolute through context over-pruning, while hybrid
+        retrieval yields a small but consistent gain over dense on both metrics,
+        so retrieval-stage value is corpus-dependent.
 \end{itemize}
 
 
@@ -241,8 +245,9 @@ retrieval strategy in use.
 \draw[arr] (gen) -- (ans);
 \node[lbl, above=0.5mm of jwt] {Query pipeline};
 
-\draw[arr] (qdrant.south) -- ++(0,-3mm) -| (retr.north)
-      node[lbl, pos=0.25, above] {visibility-filtered search};
+\draw[arr] (qdrant.south) -- ++(0,-3mm) -| (retr.north);
+\node[lbl, anchor=north west, xshift=1.5mm]
+      at ($(retr.north |- qdrant.south)+(0,-3mm)$) {visibility-filtered search};
 \end{tikzpicture}
 \caption{Pragya end-to-end pipeline. Top: ingestion (parse $\rightarrow$ clean
 $\rightarrow$ hierarchical chunk $\rightarrow$ embed children $\rightarrow$ upsert
@@ -287,19 +292,22 @@ rank well in \emph{both} lists. Fused results are deduplicated by chunk id and
 the pool is capped at 40 candidates. The constant $k=60$ is the standard default
 from the original RRF formulation.
 
-\paragraph*{Sparse-channel implementation caveat.} The document side hashes
-tokens into an index space of size $100{,}000$ at ingestion, whereas the query
-side hashes into a space of size $30{,}000$ at search time. These index spaces do
-not coincide, and Python's built-in string \texttt{hash()} is additionally
-salted per process, so query and document term indices do not align in general.
-The practical consequence is that the sparse channel contributes little to no
-useful signal in our runs; we establish this empirically in
-Section~\ref{sec:results} and discuss it in Section~\ref{sec:discussion}.
+\paragraph*{Sparse-channel implementation.} Both the document side (at
+ingestion) and the query side (at search time) hash tokens into a single shared
+index space of size $100{,}000$ using a stable \texttt{MD5}-based hash, so query
+and document term indices align. An earlier version of this work used a
+mismatched index space ($100{,}000$ at ingestion versus $30{,}000$ at search) and
+Python's per-process--salted built-in \texttt{hash()}; under that defect the
+sparse channel returned no matches and the hybrid condition silently reduced to
+dense-only retrieval, so the hybrid numbers reported in that draft were invalid.
+All results in this paper are from the corrected implementation, in which the
+sparse channel is active (Section~\ref{sec:results}).
 
 \subsection{Method C: hybrid $+$ cross-encoder reranking}
 The full pipeline reranks the (up to 40) fused candidates with the
 \texttt{cross-encoder/ms-marco-MiniLM-L-6-v2} model, which scores each
-(query, \texttt{parent\_text}) pair jointly, and keeps the top 5. We rerank
+(query, \texttt{parent\_text}) pair jointly, and keeps the top 8 subject to a
+source-diversity cap of at most two chunks per document. We rerank
 against parent text, the text the generator will actually read, rather than the
 shorter child text, so reranking optimizes the same context that feeds
 generation.
@@ -330,7 +338,7 @@ retrieved.
 \node[box, a, below=of emb] (dense) {dense search\\top 20};
 \node[box, b, right=14mm of dense] (sparse) {sparse search\\top 20};
 \node[box, b, below=6mm of $(dense)!0.5!(sparse)$] (rrf) {RRF fusion\\($k{=}60$, pool $\le$40)};
-\node[box, c, below=of rrf] (rer) {cross-encoder\\rerank $\rightarrow$ top 5};
+\node[box, c, below=of rrf] (rer) {cross-encoder\\rerank $\rightarrow$ top 8};
 \node[box, below=of rer] (gen) {citation prompt\\$\rightarrow$ Gemini Flash};
 
 \draw[arr] (q) -- (emb);
@@ -341,7 +349,7 @@ retrieved.
 \draw[arr] (rrf) -- (rer);
 \draw[arr] (rer) -- (gen);
 
-\node[lbl, right=1mm of dense, text width=14mm] {A: dense\\stops here};
+\node[lbl, left=1mm of dense, text width=14mm, align=right] {A: dense\\stops here};
 \node[lbl, right=1mm of rrf, text width=14mm] {B: hybrid\\stops here};
 \node[lbl, right=1mm of rer, text width=14mm] {C: hybrid\\+rerank};
 \end{tikzpicture}
@@ -354,11 +362,14 @@ identical for all three.}
 
 \section{Methodology}
 \subsection{Corpus}
-The test corpus consists of six internal corporate-policy documents for a
+The test corpus consists of seven internal documents for a
 fictitious company, "Infovance Technologies," spanning distinct enterprise
 domains: an HR leave policy, an IT security policy, an IT helpdesk standard
 operating procedure, a finance expense-reimbursement policy, an engineering team
-handbook, and an employee onboarding guide. The documents are clean,
+handbook, an employee onboarding guide, and an IT incident report. The first six
+are the sources for our questions; the seventh (the incident report) is included
+in the searchable corpus but is not directly questioned, serving as an unqueried
+distractor the retriever must rank against. The documents are clean,
 well-structured policy text, representative of curated enterprise knowledge
 bases. As we discuss later, this is an important determinant of our findings.
 
@@ -421,18 +432,15 @@ We disclose two asymmetries honestly, as both bear on interpretation.
 
 \emph{Judge context depth (K-asymmetry).} The faithfulness judge scores against
 the top 2 retrieved contexts and the context-precision judge against the top 3.
-For Methods~A and~B this is a strict subset of the available contexts (which
-number around 8; see Section~\ref{sec:results}), but Method~C frequently returns
-only 1--2 contexts after reranking and parent deduplication, so the two judges
-see nearly the same material for~C. We return to whether this confounds the
+For all three methods this is a strict subset of the available contexts: Methods~A
+and~B return around 7--8 contexts and Method~C returns about 4 (mean 4.17; see
+Section~\ref{sec:results}). The two judges therefore see overlapping but not
+identical material for every method. We return to whether this confounds the
 reranking result in Section~\ref{sec:discussion}.
 
-\emph{Coverage.} Two hybrid cells are each computed over 29 of 30 questions, for
-two unrelated reasons. The hybrid faithfulness mean omits Q13 (an IT-helpdesk
-question), whose faithfulness scoring timed out and is recorded as missing, and
-the hybrid context-precision mean omits Q2 (an HR question), which has no recorded
-context-precision score. Both dense and rerank are computed over the full 30 on
-each metric. We report these gaps explicitly rather than imputing values.
+\emph{Coverage.} Every cell in Table~\ref{tab:results} is computed over the full
+30 questions: all three methods answered all 30, and both judges scored all 30
+for each method, with no timeouts or missing values.
 
 \section{Results}
 \label{sec:results}
@@ -452,57 +460,50 @@ Fig.~\ref{fig:bars} visualizes the two metrics across methods.
 \toprule
 \textbf{Method} & \textbf{Faithfulness} & \textbf{Ctx.\ Precision} & \textbf{Avg.} \\
 \midrule
-A: Dense           & 0.873          & \textbf{0.936} & 0.905 \\
-B: Hybrid          & \textbf{0.886}\textsuperscript{a} & 0.928\textsuperscript{b} & \textbf{0.907} \\
-C: Hybrid$+$Rerank & 0.750          & 0.900          & 0.825 \\
+A: Dense           & 0.873          & 0.933          & 0.903 \\
+B: Hybrid          & \textbf{0.890} & \textbf{0.939} & \textbf{0.914} \\
+C: Hybrid$+$Rerank & 0.777          & 0.903          & 0.840 \\
 \bottomrule
 \end{tabular}
 \\[2pt]
 \begin{minipage}{0.95\linewidth}
-\footnotesize \textsuperscript{a}Hybrid faithfulness is a mean over 29 questions;
-Q13 timed out during faithfulness scoring (recorded as missing).
-\textsuperscript{b}Hybrid context precision is a mean over 29 questions; Q2 has no
-recorded context-precision score. All dense and rerank cells are over 30.
+\footnotesize All cells are means over the full 30 questions; both judges scored
+all 30 for every method.
 \end{minipage}
 \end{table}
 
 Three observations follow directly from the data.
 
-\textbf{(1) Hybrid attains the best average, but by a razor-thin margin.}
-Hybrid's average (0.907) edges out dense (0.905) by 0.002, a margin far smaller
-than plausible run-to-run variation. The two per-metric values appear to point in
-opposite directions: hybrid is nominally higher on faithfulness (0.886 vs.\ 0.873)
-and nominally \emph{lower} on context precision (0.928 vs.\ 0.936). As finding~(2)
-shows, however, the context-precision gap is an artifact of differential coverage
-rather than a retrieval difference, so the apparent disagreement between the two
-metrics is not real.
+\textbf{(1) Hybrid attains the best average, but by a small margin.}
+Hybrid's average (0.914) edges out dense (0.903) by 0.011, and crucially the two
+per-metric values now point the \emph{same} way: hybrid is higher on both
+faithfulness (0.890 vs.\ 0.873) and context precision (0.939 vs.\ 0.933). The
+improvement is consistent in direction but modest in magnitude on $n=30$, and we
+do not claim statistical significance; we read it as a small, real gain rather
+than a decisive one.
 
-\textbf{(2) The sparse channel changes almost nothing.} Inspecting the retrieved
-contexts per question, dense (A) and hybrid (B) return \emph{byte-identical}
-context sets on 29 of 30 questions; the sole exception is Q13, where hybrid
-surfaced one additional context, and Q13 is precisely the question whose hybrid
-faithfulness score is missing. Adding the sparse retriever and RRF fusion thus
-left the context fed to the generator unchanged on every question that was
-actually scored. Context precision makes this sharper: that judge is deterministic
-given the contexts, so on the 28 byte-identical questions for which both methods
-carry a context-precision score it returns \emph{identical} values for A and B
-(28 of 28). The small context-precision gap in Table~\ref{tab:results}
-(0.936 vs.\ 0.928) is therefore not a retrieval difference and not judging noise,
-but a coverage artifact driven by the two questions outside that identical set:
-Q2, which has no hybrid context-precision score, and Q13, whose contexts differ.
-Faithfulness is answer-dependent rather than fixed by the context set, so the
-small A/B faithfulness difference can still reflect generation stochasticity; the
-context-precision side cannot. Either way, A and B are even more equivalent than a
-raw table read suggests, which is the empirical footprint of the sparse-channel
-index mismatch noted in Section~\ref{sec:methods}.
+\textbf{(2) The sparse channel is active and changes retrieval.} Inspecting the
+retrieved contexts per question, dense (A) and hybrid (B) now return
+\emph{different} context sets on all 30 of 30 questions: adding the sparse
+retriever and RRF fusion reorders or substitutes at least one context everywhere.
+This propagates to the metrics. The context-precision judge, given a fixed context
+set, is deterministic, so its A-vs-B differences are pure retrieval effects: the
+two methods earn different context-precision scores on 12 of 30 questions, and
+hybrid's higher mean (0.939 vs.\ 0.933) is therefore a genuine retrieval
+difference, not judging noise or a coverage artifact. Faithfulness, which is
+answer-dependent, differs on 5 of 30 questions. This reverses the conclusion of
+the earlier, defective draft, in which A and B retrieved byte-identical contexts
+because the sparse channel was silently inert (Section~\ref{sec:methods}); under
+the corrected implementation the lexical channel demonstrably contributes.
 
-\textbf{(3) Reranking sharply degrades faithfulness.} Method~C's faithfulness
-falls to 0.750 (0.123 below dense and 0.136 below hybrid), and its context
-precision also drops to 0.900, giving the worst average (0.825) by a wide margin.
+\textbf{(3) Reranking degrades both metrics.} Method~C's faithfulness
+falls to 0.777 (0.096 below dense and 0.113 below hybrid), and its context
+precision also drops to 0.903, giving the worst average (0.840) by a wide margin.
 The cause is visible in the retrieved-context counts: Methods~A and~B return a
-mean of about 8 contexts per question (range 7--10), whereas Method~C returns a
-mean of 1.73 (range 1--2). Reranking to the top 5, followed by parent-text
-deduplication, collapses the context down to one or two parent blocks.
+mean of about 7--8 contexts per question (A: 6.97, B: 7.60), whereas Method~C
+returns a mean of 4.17 (range 4--5). Reranking to the top 8 under a per-source
+diversity cap, followed by parent-text deduplication, roughly halves the context
+available to the generator.
 
 \begin{figure}[t]
 \centering
@@ -512,7 +513,7 @@ deduplication, collapses the context down to one or two parent blocks.
 \begin{axis}[
   ybar,
   width=\linewidth,
-  height=6cm,
+  height=5cm,
   bar width=14pt,
   enlarge x limits=0.22,
   ymin=0.6, ymax=1.0,
@@ -522,31 +523,30 @@ deduplication, collapses the context down to one or two parent blocks.
   ylabel={Score},
   ylabel style={font=\footnotesize},
   ymajorgrids=true,
-  grid style={draw=black!12, line width=0.4pt},
+  grid style={draw=black!20, line width=0.4pt},
   symbolic x coords={Dense (A), Hybrid (B), Hybrid+Rerank (C)},
   xtick=data,
   x tick label style={font=\scriptsize},
   tick align=outside,
-  tick style={black!45, line width=0.4pt},
-  axis lines*=left,
-  axis line style={black!45, line width=0.5pt},
+  tick style={black!55, line width=0.4pt},
+  axis line style={black!55, line width=0.6pt},
   nodes near coords,
   nodes near coords style={font=\scriptsize, text=black!55, inner sep=1pt,
         /pgf/number format/fixed, /pgf/number format/precision=3},
-  legend style={at={(0.5,-0.20)}, anchor=north, legend columns=-1,
+  legend style={at={(0.5,-0.14)}, anchor=north, legend columns=-1,
                 font=\scriptsize, draw=none, fill=none,
                 /tikz/every even column/.append style={column sep=12pt}},
 ]
 \addplot[fill=faithblue, draw=faithblue!80!black] coordinates {
-  (Dense (A), 0.873) (Hybrid (B), 0.886) (Hybrid+Rerank (C), 0.750)};
+  (Dense (A), 0.873) (Hybrid (B), 0.890) (Hybrid+Rerank (C), 0.777)};
 \addplot[fill=ctxochre, draw=ctxochre!70!black] coordinates {
-  (Dense (A), 0.936) (Hybrid (B), 0.928) (Hybrid+Rerank (C), 0.900)};
+  (Dense (A), 0.933) (Hybrid (B), 0.939) (Hybrid+Rerank (C), 0.903)};
 \legend{Faithfulness, Context precision}
 \end{axis}
 \end{tikzpicture}
-\caption{Faithfulness and context precision by method. Dense and hybrid are
-near-identical; reranking degrades both metrics, with the largest drop in
-faithfulness (0.873/0.886 $\rightarrow$ 0.750).}
+\caption{Faithfulness and context precision by method. Hybrid is slightly above
+dense on both metrics; reranking degrades both, with the largest drop in
+faithfulness (0.873/0.890 $\rightarrow$ 0.777).}
 \label{fig:bars}
 \end{figure}
 
@@ -554,75 +554,72 @@ faithfulness (0.873/0.886 $\rightarrow$ 0.750).}
 \label{sec:discussion}
 \subsection{Why reranking hurts here: context over-pruning}
 The headline finding is that adding a cross-encoder reranker, conventionally
-expected to improve precision, instead degraded faithfulness by 0.12 absolute.
-The mechanism is over-pruning. The reranker keeps the top 5 candidates, and the
-generation stage then deduplicates by parent text. Because our hierarchical
-children overlap and many map to the same parent, the five reranked children
-routinely collapse to one or two distinct parent blocks. Empirically, this is a
-mean of 1.73 contexts for Method~C versus about 8 for Methods~A and~B. With only one or
-two short context blocks, the generator is starved of the surrounding material it
-needs to support every claim it makes, so more of the answer goes ungrounded and
+expected to improve precision, instead degraded faithfulness by 0.10 absolute.
+The mechanism is over-pruning. The reranker keeps the top 8 candidates under a
+per-source diversity cap, and the generation stage then deduplicates by parent
+text. Because our hierarchical children overlap and many map to the same parent,
+the reranked children collapse to fewer distinct parent blocks. Empirically, this
+is a mean of 4.17 contexts for Method~C versus about 7--8 for Methods~A and~B,
+roughly halving the material reaching the generator. With less surrounding
+context to support every claim it makes, more of the answer goes ungrounded and
 faithfulness falls.
 
 This is a genuine property of the method on this corpus, not merely a measurement
-artifact. The collapse to 1--2 contexts is produced by the pipeline itself (the
-reranker's top-5 cut composed with parent deduplication) and would feed the same
-thin context to the generator regardless of how it is scored. On a small, clean
-corpus where the un-reranked pool is already highly relevant, aggressive
-top-$k$ pruning removes useful redundant context without removing meaningful
-noise, so the precision gain reranking is meant to provide has little to bite on
-while the recall loss directly harms grounding.
+artifact. The reduction to about four contexts is produced by the pipeline itself
+(the reranker's top-8 cut and diversity cap composed with parent deduplication)
+and would feed the same thinned context to the generator regardless of how it is
+scored. On a small, clean corpus where the un-reranked pool is already highly
+relevant, aggressive top-$k$ pruning removes useful redundant context without
+removing meaningful noise, so the precision gain reranking is meant to provide has
+little to bite on while the recall loss directly harms grounding.
 
 \subsection{On the K-asymmetry}
 We disclosed that the faithfulness judge sees the top 2 contexts and the
-context-precision judge the top 3, while Method~C often produces only 1--2
-contexts in total. This asymmetry could, in principle, inflate or deflate
-Method~C's scores relative to A and~B, and we do not claim the absolute 0.750 is
-free of it. However, the asymmetry does not manufacture the finding: the
-over-pruning that drives the faithfulness drop is a real reduction in the context
-\emph{available to the generator} (mean 1.73 blocks), which happens before any
-judge is applied. A uniform-$K$ re-run would tighten the absolute numbers, but
-the generator is grounded on the same one-to-two blocks
-either way.
+context-precision judge the top 3, while Method~C produces about 4 contexts in
+total. This asymmetry could, in principle, inflate or deflate Method~C's scores
+relative to A and~B, and we do not claim the absolute 0.777 is free of it.
+However, the asymmetry does not manufacture the finding: the over-pruning that
+drives the faithfulness drop is a real reduction in the context \emph{available
+to the generator} (mean 4.17 blocks versus 7--8), which happens before any judge
+is applied. A uniform-$K$ re-run would tighten the absolute numbers, but the
+generator is grounded on the same thinned context either way.
 
-\subsection{On the hybrid-vs-dense near-tie}
-We report hybrid as the best method by average, consistent with its 0.907 mean.
-We are equally clear that this margin is thin (0.002), and that our context-level
-analysis shows dense and hybrid retrieving identical contexts on every scored
-question and earning identical context-precision scores wherever those contexts
-coincide. The nominal split in Table~\ref{tab:results}, dense ahead on context
-precision and hybrid ahead on faithfulness, is not a genuine disagreement: the
-context-precision gap is a coverage artifact (Section~\ref{sec:results}), and only
-the faithfulness side reflects an answer-level difference. The honest reading is
-that, on this
-corpus and with this sparse implementation, hybrid retrieval was effectively
-equivalent to dense retrieval: the sparse channel did not contribute, both
-because the index-space mismatch prevented query and document terms from aligning
-and because, on clean policy text with little reliance on exact rare tokens,
-dense semantic matching already retrieved the relevant passages. A corpus richer
-in abbreviations, identifiers, and codes (where lexical matching is known to
-help) and a corrected or learned sparse encoder would be needed to test hybrid's
-advantage fairly.
+\subsection{On the hybrid-vs-dense difference}
+We report hybrid as the best method by average, consistent with its 0.914 mean,
+and we are equally clear that the margin over dense (0.011) is small. What the
+corrected run establishes is that the difference is \emph{real} rather than an
+artifact: hybrid retrieves different contexts from dense on all 30 questions and
+is nominally ahead on both metrics, and because the context-precision judge is
+deterministic given a context set, hybrid's higher context precision (0.939 vs.\
+0.933, differing on 12 of 30 questions) is attributable to retrieval, not to
+scoring noise or coverage. We nonetheless refrain from significance claims at
+$n=30$: the gain is consistent in direction but modest, and on this clean
+policy corpus---where exact rare tokens are scarce---dense semantic matching
+already retrieves most relevant passages, leaving the lexical channel limited
+headroom. A corpus richer in abbreviations, identifiers, and codes, where lexical
+matching is known to help, and a learned sparse encoder (SPLADE, FastEmbed BM25)
+in place of our hashed term-frequency approximation would be needed to test
+hybrid's advantage at full strength.
 
 \subsection{Takeaway}
 The practical lesson is that retrieval-stage value is contingent on corpus
 characteristics. On a small, clean, semantically well-separated enterprise
-corpus, dense retrieval alone is already strong; a (correctly implemented) sparse
-channel has little to add; and an aggressive reranker can actively hurt by
+corpus, dense retrieval alone is already strong; adding a sparse channel yields a
+small but consistent improvement; and an aggressive reranker can actively hurt by
 starving the generator of context. Reranking is not a free improvement to be
 applied by default: its top-$k$ cut must be sized against the corpus and the
 downstream context budget.
 
 \section{Conclusion}
 We used Pragya, a working enterprise RAG platform, as a controlled testbed to
-compare dense, hybrid, and hybrid$+$rerank retrieval on a real six-document
+compare dense, hybrid, and hybrid$+$rerank retrieval on a real seven-document
 corporate corpus and 30 ground-truth questions, scored by two judge models
 independent of the answer generator. Hybrid retrieval achieved the best average
-score (0.907), but only marginally over dense (0.905) and on retrieved context
-that was identical to dense on every scored question, so the two are effectively
-equivalent on this corpus. Cross-encoder reranking was clearly worst, dropping
-faithfulness from 0.873 to 0.750 by over-pruning the generator's context to one
-or two blocks. These results caution against treating each additional retrieval
+score (0.914), ahead of dense (0.903) on both metrics on retrieved context that
+differed from dense on every question, so the sparse channel's contribution is
+small but real on this corpus. Cross-encoder reranking was clearly worst, dropping
+faithfulness from 0.873 to 0.777 by over-pruning the generator's context to about
+four blocks. These results caution against treating each additional retrieval
 stage as a uniform improvement: on small, clean enterprise corpora, dense
 retrieval is already strong and aggressive reranking can degrade faithfulness.
 The value of hybrid retrieval and reranking is contingent on corpus
@@ -632,9 +629,9 @@ Three directions follow directly from the limitations disclosed above. A
 uniform-$K$ evaluation, in which both judges score the same number of contexts,
 would remove the disclosed K-asymmetry and report reranking's effect under
 matched conditions, while replacing the sparse channel's hashed term-frequency
-approximation with a corrected or learned encoder (SPLADE, or a FastEmbed BM25
-implementation) would let the lexical channel's true contribution be measured
-rather than nullified by the present index-space mismatch. Finally, evaluation
+approximation with a learned encoder (SPLADE, or a FastEmbed BM25
+implementation) would let the lexical channel's full contribution be measured
+beyond our approximation. Finally, evaluation
 on a larger, noisier corpus (with redundant and off-topic documents, where
 lexical matching has rare tokens to catch and reranking has real noise to
 remove) would test whether the negative reranking result is specific to small,
