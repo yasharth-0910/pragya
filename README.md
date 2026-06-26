@@ -28,7 +28,7 @@ Technically, Pragya combines **hybrid retrieval** (dense semantic + sparse keywo
 ## Key Features
 
 **Retrieval & RAG**
-- Hybrid retrieval: dense semantic search + sparse keyword search, fused with **Reciprocal Rank Fusion (k=60)**, then re-scored by a **cross-encoder reranker** down to the top 5 parent chunks.
+- Hybrid retrieval: dense semantic search + sparse keyword search, fused with **Reciprocal Rank Fusion (k=60)**, then re-scored by a **cross-encoder reranker** down to the top 8 parent chunks under a per-source diversity cap.
 - Hierarchical chunking — retrieve on small **child chunks** (256 tokens) for precision, generate from large **parent chunks** (1024 tokens) for context.
 - Citation-enforced generation — the model is prompted to ground every claim and answers stream token-by-token over **Server-Sent Events**.
 - Asymmetric embedding — queries and documents are embedded with their correct task types (`retrieval_query` / `retrieval_document`) to avoid a common silent RAG quality drop.
@@ -85,7 +85,7 @@ flowchart TD
     SP --> SR["Sparse retrieve<br/>top 20 (keyword)"]
     DR --> RRF["RRF fusion (k=60)<br/>dedupe + rerank by rank"]
     SR --> RRF
-    RRF --> CE["Cross-encoder rerank<br/>ms-marco-MiniLM-L-6-v2 → top 5"]
+    RRF --> CE["Cross-encoder rerank<br/>ms-marco-MiniLM-L-6-v2 → top 8"]
     CE --> GEN["Citation-enforced prompt<br/>→ Gemini Flash → SSE stream"]
 
     RBAC["Department visibility filter<br/>(applied to every Qdrant search)"] -.-> DR
@@ -95,7 +95,7 @@ flowchart TD
 - **Dense retrieval** — semantic similarity over 768-dim Gemini embeddings (cosine). Catches paraphrase and meaning even when no keyword matches.
 - **Sparse retrieval** — a BM25-style keyword signal. Words are hashed into a fixed index space and weighted by term frequency (a lightweight BM25 *approximation*, not a learned sparse model). Catches exact tokens that embeddings miss — e.g. abbreviations like "CL" / "EL".
 - **RRF fusion** — combines the two ranked lists by reciprocal rank (`1/(k+rank)`, `k=60`, the standard from Cormack et al., 2009), ignoring incomparable raw scores. Documents both retrievers agree on float to the top.
-- **Cross-encoder rerank** — jointly scores each `(query, chunk)` pair and keeps the top 5 parent chunks for generation.
+- **Cross-encoder rerank** — jointly scores each `(query, chunk)` pair and keeps the top 8 parent chunks (under a per-source diversity cap) for generation.
 
 ---
 
@@ -105,11 +105,11 @@ Pragya was evaluated with **RAGAS** on the document corpus in `docs/` over **30 
 
 | Method | Faithfulness | Context Precision | Average |
 |--------|:------------:|:-----------------:|:-------:|
-| Dense only | 0.873 | 0.936 | 0.905 |
-| **Hybrid (dense + sparse + RRF)** | **0.886** | 0.928 | **0.907** |
-| Hybrid + Rerank | 0.750 | 0.900 | 0.825 |
+| Dense only | 0.873 | 0.933 | 0.903 |
+| **Hybrid (dense + sparse + RRF)** | **0.890** | **0.939** | **0.914** |
+| Hybrid + Rerank | 0.777 | 0.903 | 0.840 |
 
-**Findings.** Hybrid retrieval edges out dense-only on average (0.907 vs 0.905) — a thin but consistent margin, driven by better faithfulness. Adding the cross-encoder reranker *hurt* faithfulness noticeably (0.886 → 0.750): on a small, clean corpus, pruning to 5 chunks discards supporting context that the generator needed, so it over-prunes rather than refines. This is an honest, useful result — reranking is not free, and its value depends on corpus size and noise.
+**Findings.** Hybrid retrieval is best on **both** metrics (avg 0.914 vs 0.903 for dense) — a small but consistent margin, and the sparse channel is genuinely active: hybrid retrieves different context from dense on all 30 questions. Adding the cross-encoder reranker *hurt* both metrics, with faithfulness falling from 0.890 to 0.777: on a small, clean corpus, pruning the candidate pool discards supporting context the generator needed, so reranking over-prunes rather than refines. This is an honest, useful result — reranking is not free, and its value depends on corpus size and noise. (An earlier draft reported invalid hybrid numbers because the sparse channel was silently inert; these are the corrected results.)
 
 **Methodology — two independent judges.** The answers were *generated* by Gemini (`gemini-3.1-flash-lite`), but *graded* by separate models so the generator never grades its own output: **faithfulness** was judged by `qwen2.5:7b` running locally via Ollama, and **context precision** by `llama-3.1-8b-instant` via Groq. Decoupling the generator from the judges removes self-evaluation bias.
 
@@ -186,13 +186,13 @@ Copy `.env.example` to `.env` and fill in the values. Docker Compose reads `.env
 
 | Variable | Description | Required |
 |----------|-------------|:--------:|
-| `DATABASE_URL` | Neon Postgres URL. Must use the `postgresql+asyncpg://` driver prefix and `?ssl=require`. | ✅ |
+| `DATABASE_URL` | Neon Postgres URL. Must use the `postgresql+asyncpg://` driver prefix and `?ssl=require`. | Yes |
 | `QDRANT_URL` | Qdrant endpoint. `http://localhost:6333` for host dev; auto-overridden to `http://qdrant:6333` under Compose. | Default |
 | `QDRANT_COLLECTION` | Vector collection name (dense 768d + sparse). | Default `pragya_docs` |
-| `GEMINI_API_KEY` | Google AI Studio key for embeddings + chat. | ✅ |
+| `GEMINI_API_KEY` | Google AI Studio key for embeddings + chat. | Yes |
 | `GEMINI_EMBEDDING_MODEL` | Embedding model. | Default `gemini-embedding-001` |
-| `GEMINI_CHAT_MODEL` | Chat/generation model string (confirm exact name in AI Studio). | ✅ |
-| `SECRET_KEY` | 64-char hex used to sign JWTs. Generate with `python -c "import secrets; print(secrets.token_hex(32))"`. | ✅ |
+| `GEMINI_CHAT_MODEL` | Chat/generation model string (confirm exact name in AI Studio). | Yes |
+| `SECRET_KEY` | 64-char hex used to sign JWTs. Generate with `python -c "import secrets; print(secrets.token_hex(32))"`. | Yes |
 | `ALGORITHM` | JWT signing algorithm. | Default `HS256` |
 | `ACCESS_TOKEN_EXPIRE_HOURS` | JWT lifetime in hours. | Default `8` |
 | `GROQ_API_KEY` | Independent judge LLM — **evaluation only**. App boots fine without it. | Eval-only |
