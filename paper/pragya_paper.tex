@@ -429,7 +429,7 @@ self-evaluation bias in which a model systematically rates its own outputs
 favourably.
 
 \subsection{Evaluation asymmetries (disclosed)}
-We disclose two asymmetries honestly, as both bear on interpretation.
+We disclose two asymmetries, as both bear on interpretation.
 
 \emph{Judge context depth (K-asymmetry).} The faithfulness judge scores against
 the top 2 retrieved contexts and the context-precision judge against the top 3.
@@ -476,7 +476,7 @@ all 30 for every method.
 Three observations follow directly from the data.
 
 \textbf{(1) Hybrid attains the best average, but by a small margin.}
-Hybrid's average (0.914) edges out dense (0.903) by 0.011, and crucially the two
+Hybrid's average (0.914) edges out dense (0.903) by 0.011, and the two
 per-metric values now point the \emph{same} way: hybrid is higher on both
 faithfulness (0.890 vs.\ 0.873) and context precision (0.939 vs.\ 0.933). The
 improvement is consistent in direction but modest in magnitude on $n=30$, and we
@@ -554,7 +554,7 @@ faithfulness (0.873/0.890 $\rightarrow$ 0.777).}
 \section{Discussion}
 \label{sec:discussion}
 \subsection{Why reranking hurts here: context over-pruning}
-The headline finding is that adding a cross-encoder reranker, conventionally
+Our central finding is that adding a cross-encoder reranker, conventionally
 expected to improve precision, instead degraded faithfulness by 0.10 absolute.
 The mechanism is over-pruning. The reranker keeps the top 8 candidates under a
 per-source diversity cap, and the generation stage then deduplicates by parent
