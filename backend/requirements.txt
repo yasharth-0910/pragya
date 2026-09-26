@@ -44,6 +44,7 @@ langchain~=0.3.0
 langchain-core~=0.3.0
 langchain-community~=0.3.0
 langchain-groq~=0.2.0       # Groq judge LLM wrapper (llama-3.1-8b-instant) — independent of the Gemini generator
+langchain-ollama==0.2.3     # local Ollama judge (qwen2.5:7b) for faithfulness; 0.2.3 is what ragas_eval.py's ChatOllama patch targets
 groq~=0.37                  # Groq SDK (judge LLM backend)
 nltk~=3.9                   # ragas eagerly instantiates BleuScore at import, which needs nltk
 

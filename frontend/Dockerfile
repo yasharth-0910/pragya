@@ -8,12 +8,13 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Copy only the manifests first so `npm ci` is cached in its own layer; it re-runs
+# Copy only the manifests first so install is cached in its own layer; it re-runs
 # only when package.json / package-lock.json change, not on every source edit.
 COPY package.json package-lock.json* ./
-# `npm ci` (not `npm install`) — installs exactly from the lockfile: reproducible,
-# and it errors if package.json and the lockfile have drifted.
-RUN npm ci
+# npm install (vs ci) so the lockfile format version is not checked strictly —
+# avoids breakage when the host npm (11.x / Node 25) generates a lockfile that
+# node:20-alpine's older npm rejects. Deps are still pinned via package.json.
+RUN npm install
 
 # GOTCHA: NEXT_PUBLIC_* env vars are INLINED into the client JS at BUILD time, not
 # read at runtime. So the browser-facing API URL must exist NOW, during `next build`

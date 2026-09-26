@@ -56,3 +56,14 @@ backend/venv/
 __pycache__/
 *.pyc
 backend/__pycache__
+
+RAGAS_RERUN_BREIF.md
+
+# College report / internship docs (local only)
+collegereport.tex
+collegereport_template.tex
+demo_questions.txt
+INTERVIEW.tex
+INTERVIEW.pdf
+Industrial Summer Training Instructions (1).pdf
+Summer Training Report Writing Guidelines (1).pdf

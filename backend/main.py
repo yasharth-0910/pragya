@@ -105,7 +105,7 @@ async def health() -> dict[str, str]:
 # ── Routers (added per session as modules are built) ──────────────────────────
 # Uncomment each router as its session is completed. Do NOT import routers that
 # don't exist yet — that raises ImportError on startup and blocks all dev.
-from routers import admin, analytics, auth, chat, departments, documents, intelligence, meeting
+from routers import admin, analytics, auth, chat, departments, documents, intelligence, meeting  # noqa: E402 — deliberately after app creation
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(departments.router, prefix="/departments", tags=["departments"])

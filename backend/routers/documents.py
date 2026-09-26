@@ -39,7 +39,7 @@ from schemas.document import (
     DocumentStatusResponse,
     DocumentUploadResponse,
 )
-from services.ingestion_service import process_document, reindex_document
+from services.ingestion_service import delete_document_vectors, process_document, reindex_document
 from services.retrieval_service import dense_retrieve, embed_query
 
 # The three valid document visibility tiers (CLAUDE.md: 3-tier access model).
@@ -341,6 +341,31 @@ async def reindex_one_document(
     )
     logger.info("Reindexed doc=%s chunks=%d", document_id, chunk_count)
     return {"chunk_count": chunk_count}
+
+
+@router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_document(
+    document_id: uuid.UUID,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Permanently delete a document, its Qdrant vectors, and its chunk rows.
+
+    Admin only. Qdrant is cleared FIRST so stale vectors can never serve
+    retrieval results for a document that no longer exists in the DB.
+    Chunk rows are cleaned up automatically via the ON DELETE CASCADE FK.
+    can_access_document is still checked so personal docs (uploader-only)
+    cannot be deleted by a different admin.
+    """
+    document = await db.get(Document, document_id)
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    if not can_access_document(document, current_user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    await asyncio.to_thread(delete_document_vectors, document_id)
+    await db.delete(document)
+    await db.commit()
+    logger.info("Deleted document id=%s by admin=%s", document_id, current_user.id)
 
 
 @router.get("/{document_id}/status", response_model=DocumentStatusResponse)

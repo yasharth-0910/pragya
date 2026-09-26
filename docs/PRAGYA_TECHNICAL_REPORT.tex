@@ -218,6 +218,144 @@ diagrams and data figures.
 \listoftables
 
 %==============================================================================
+\chapter{Key Concepts \& Keywords --- A Plain-Language Primer}
+%==============================================================================
+\begin{keyidea}
+Read this chapter to be able to \emph{explain Pragya to anyone}. It defines every important term in
+plain language, says \emph{why} it matters, and shows \emph{how Pragya uses it}. No prior RAG knowledge
+assumed; the rest of the report goes deep, this is the map.
+\end{keyidea}
+
+\section{The whole project in 60 seconds}
+Pragya is an internal ``ask-your-documents'' assistant. An employee types a normal question
+---\emph{``How many casual leaves do I get?''}---and Pragya answers in plain English \textbf{with a
+citation to the exact file and page}. It does this by (1)~chopping every document into small pieces,
+(2)~turning those pieces into numbers a computer can compare (``embeddings''), (3)~finding the few most
+relevant pieces using \textbf{two complementary search methods at once} (meaning-based and
+keyword-based), (4)~feeding only those pieces to a large language model with strict instructions to
+answer \emph{only} from them and cite every claim, and (5)~enforcing that you can only ever see
+documents your department is allowed to see. It is \textbf{not} a chatbot that makes things up---every
+sentence is traceable to a source.
+
+\section{The journey of one question (the mental model)}
+If you can narrate these six steps, you can explain the system; the rest is detail.
+\begin{enumerate}
+  \item \textbf{Ask} --- the user types a question in plain language.
+  \item \textbf{Embed} --- the question becomes a 768-number vector capturing its meaning.
+  \item \textbf{Retrieve} --- two searches run together: \emph{dense} (by meaning) and \emph{sparse} (by
+  keyword), each returning $\sim$20 candidates; the department access filter is applied \emph{inside}
+  both searches, so forbidden text is never even fetched.
+  \item \textbf{Fuse} --- Reciprocal Rank Fusion (RRF) merges the two ranked lists into one.
+  \item \textbf{Rerank} --- a cross-encoder re-scores the survivors and keeps the few best passages.
+  \item \textbf{Generate} --- those passages go into a strict, cite-only prompt; the LLM streams the
+  answer with \code{[Source: file, page]} tags.
+\end{enumerate}
+
+\section{A --- Retrieval \& RAG: the core idea}
+\begin{itemize}
+  \item \textbf{RAG (Retrieval-Augmented Generation)} --- Rather than trusting a model's memory, you
+  first \emph{retrieve} relevant text from your own documents and \emph{augment} the prompt with it, so
+  the answer is grounded and citable. \emph{Explain it as:} ``an open-book exam for an AI.''
+  \item \textbf{Retrieval is the bottleneck.} Modern LLMs write fluent answers \emph{if} given the right
+  passages; the hard part is finding them. That is why this project is mostly about retrieval.
+  \item \textbf{Embedding} --- A list of numbers (a \emph{vector}, here 768) capturing the \emph{meaning}
+  of a text; similar meanings get similar vectors. Pragya uses \code{gemini-embedding-001}.
+  \item \textbf{Dense retrieval (semantic search)} --- Search by meaning: embed the question and find the
+  chunks whose embeddings are closest by \textbf{cosine similarity} (the angle between two vectors).
+  Catches paraphrases.
+  \item \textbf{Sparse retrieval / BM25 (keyword search)} --- Search by exact words; catches what
+  embeddings miss, like abbreviations (``CL''~=~casual leave) or IDs with no embedding ``neighborhood.''
+  Pragya uses a lightweight BM25-style approximation.
+  \item \textbf{Hybrid retrieval} --- Run dense \emph{and} sparse together and combine them; meaning and
+  keywords are complementary. One of Pragya's three defining features.
+  \item \textbf{RRF (Reciprocal Rank Fusion)} --- Merge two ranked lists by scoring each result
+  $1/(k+\text{rank})$ (with $k{=}60$) and adding the scores, so an item ranked well in \emph{both} lists
+  wins. You fuse by \emph{rank} because cosine and BM25 scores are not on the same scale. \emph{Explain
+  it as:} ``two judges vote; what both rank highly wins.''
+  \item \textbf{Cross-encoder reranker} --- A small model that reads each \emph{(question, chunk)} pair
+  \emph{together} and scores how well the chunk answers the question---more accurate than embedding
+  similarity but slower, so it runs only on the $\sim$40 shortlisted candidates. Pragya keeps the top 8.
+  On a small, clean corpus it can \emph{over-prune} and hurt (see the evaluation).
+  \item \textbf{Vector database (Qdrant)} --- A database built to store embeddings and find nearest
+  neighbors fast; one collection holds a dense and a sparse vector per chunk, plus metadata.
+\end{itemize}
+
+\section{B --- Chunking \& embeddings: preparing the documents}
+\begin{itemize}
+  \item \textbf{Chunking} --- Splitting a document into pieces small enough to retrieve precisely.
+  \item \textbf{Hierarchical / parent--child chunking} --- Pragya's trick: small \textbf{child} chunks
+  ($\sim$256 tokens) for \emph{searching} (precise) and large \textbf{parent} chunks ($\sim$1024 tokens)
+  for \emph{answering} (context). Retrieve on children, feed parents to the model.
+  \item \textbf{Token} --- Roughly a word-piece; the unit LLMs count ($\sim$256 tokens $\approx$ a short
+  paragraph).
+  \item \textbf{Overlap} --- Consecutive chunks share $\sim$20\% of their text so a sentence split across
+  a boundary is not lost to both.
+  \item \textbf{Matryoshka embeddings / truncation} --- \code{gemini-embedding-001} outputs 3072 numbers,
+  but the first 768 already carry most of the meaning (like nested dolls), so Pragya keeps 768---smaller,
+  faster, negligible quality loss.
+  \item \textbf{Asymmetric embedding} --- Telling the embedder whether it encodes a \emph{question}
+  (\code{retrieval\_query}) or a \emph{document} (\code{retrieval\_document}); they play different roles,
+  so declaring the role improves matching.
+\end{itemize}
+
+\section{C --- Generation, citations \& trust}
+\begin{itemize}
+  \item \textbf{LLM (Large Language Model)} --- The model that writes the answer (Gemini Flash here); the
+  easily-swappable part.
+  \item \textbf{Citation-grounded generation} --- The prompt forces the model to answer only from the
+  provided chunks and tag every claim like \code{[Source: HR\_Leave\_Policy.pdf, p.4]}, or say it cannot.
+  This is what makes answers checkable.
+  \item \textbf{Hallucination} --- A confident but unsupported statement; grounding, citations, and the
+  ``answer only from context'' instruction are the defenses.
+  \item \textbf{SSE (Server-Sent Events) / streaming} --- The answer is sent token-by-token so the user
+  sees it appear live.
+\end{itemize}
+
+\section{D --- Access control \& auth: the ``walls that hold''}
+\begin{itemize}
+  \item \textbf{RBAC (Role-Based Access Control)} --- Permissions by who you are: three roles (admin /
+  user / viewer) and three visibility tiers (\textbf{company}, \textbf{department}, \textbf{personal}).
+  \item \textbf{Enforced at the vector layer} --- The defining security idea: the permission check is a
+  \emph{filter on the search query itself}, so forbidden chunks are never retrieved---an HR user cannot
+  pull an IT document by construction, not by a hopeful \code{if}-check.
+  \item \textbf{JWT (JSON Web Token)} --- A signed token issued at login that proves who you are (and your
+  department/role) on every later request without a DB lookup. Email + password, bcrypt-hashed, 8-hour
+  tokens, no OAuth.
+\end{itemize}
+
+\section{E --- Evaluation: how we proved it works}
+\begin{itemize}
+  \item \textbf{RAGAS} --- A toolkit for scoring RAG systems with an LLM as judge.
+  \item \textbf{Faithfulness} --- Of the claims in the answer, how many are actually supported by the
+  retrieved context? High = not hallucinating. (Hybrid: $0.890$.)
+  \item \textbf{Context precision} --- Of the retrieved chunks, how many are actually relevant? High =
+  retrieval is not padding the prompt with junk. (Hybrid: $0.939$.)
+  \item \textbf{Independent / bias-controlled judges} --- The model that \emph{writes} answers (Gemini) is
+  never the model that \emph{grades} them (faithfulness by local \code{qwen2.5:7b}, context precision by
+  Groq \code{llama-3.1-8b}), so the system cannot flatter itself.
+  \item \textbf{Controlled comparison (A/B/C)} --- Three configurations on the same 30 questions: dense,
+  hybrid, hybrid+rerank. \emph{Result:} hybrid is best on both metrics; the most complex (rerank) is
+  worst---\textbf{more pipeline is not automatically better}.
+\end{itemize}
+
+\section{F --- The stack (one line each)}
+\textbf{FastAPI} (async Python web framework) $\cdot$ \textbf{async/await} (serve many requests without
+blocking) $\cdot$ \textbf{SQLAlchemy} (database as Python objects) $\cdot$ \textbf{Alembic} (versioned
+schema migrations) $\cdot$ \textbf{Neon} (cloud PostgreSQL for users, metadata, logs) $\cdot$
+\textbf{Qdrant} (the vector database) $\cdot$ \textbf{PyMuPDF} (read PDFs \emph{with page numbers}, which
+citations depend on) $\cdot$ \textbf{Next.js 15} (the React frontend) $\cdot$ \textbf{Docker Compose}
+(run everything with one command) $\cdot$ \textbf{bcrypt} (one-way password hashing).
+
+\section{The bug worth telling in an interview}
+The most instructive moment: the sparse keyword channel was \textbf{silently broken} for a while
+---ingestion and querying hashed words into different number spaces, and Python's \code{hash()} is
+randomized per process, so the two sides never matched. It threw \textbf{no error}; it only showed up as
+\emph{``hybrid mysteriously scores the same as dense''} in the evaluation. Treating that surprising
+non-result as a clue (not an answer) led to finding it, fixing it (a stable hash + one shared space),
+re-indexing, and re-running the study for the real comparison (full story: Section~\ref{sec:sparse}).
+That debugging-with-measurement story explains the project's value in one breath.
+
+%==============================================================================
 \chapter{System Overview}
 \label{ch:overview}
 %==============================================================================
@@ -735,42 +873,44 @@ every point} (so the access filter runs entirely inside the Qdrant query). Three
 are stored \emph{as strings}---Qdrant's \code{MatchValue} compares by exact type, so a raw
 \code{uuid.UUID} would match zero points with no error.
 
-\section{The Sparse Channel \& Its Honest Limitations}
+\section{The Sparse Channel: A Bug We Found and Fixed}
 \label{sec:sparse}
-Pragya implements a sparse (keyword) vector intended as a BM25-style signal. This section documents
-how it is built \emph{and} a real defect the evaluation exposed.
+Pragya implements a sparse (keyword) vector as a BM25-style signal. This section documents a real
+defect an earlier build had \emph{and the fix that resolved it}---because how a bug was found and
+corrected is one of the most instructive parts of this project.
 
-\begin{lstlisting}[language=Python,caption={Sparse vector construction --- ingestion vs.\ query (note the divergence).}]
-# INGESTION (build_sparse_vector, ingestion_service.py)
-index = abs(hash(word)) % 100_000      # index space = 100,000
-value = count(word) / total_tokens     # normalized term frequency
-
-# QUERY (sparse_retrieve, retrieval_service.py)
-index = abs(hash(word)) % 30_000       # index space = 30,000 (SPARSE_INDEX_SPACE)
-value = raw count(word)                # unnormalized term frequency
+\begin{lstlisting}[language=Python,caption={Sparse vector construction --- now identical on both sides.}]
+# INGESTION and QUERY (build_sparse_vector / sparse_retrieve)
+index = int(hashlib.md5(word.encode()).hexdigest(), 16) % 100_000  # shared 100,000-dim space
+value = term frequency
 \end{lstlisting}
 
-A sparse dot product contributes a non-zero score only when a query index and a stored index
-\emph{coincide}. They do not, for two independent reasons:
+A sparse dot product scores only when a query index and a stored index \emph{coincide}---the same
+word must hash to the same index at ingestion and query time. In the corrected build it does, because
+both sides use the same deterministic hash and the same modulus.
+
+\textbf{The bug (earlier build).} That was not always true. The original implementation had two
+independent defects that made the channel silently inert:
 
 \begin{enumerate}
-  \item \textbf{Index-space mismatch (100{,}000 vs 30{,}000).} \code{abs(hash(w)) \% 100000} and
-  \code{abs(hash(w)) \% 30000} are equal only by coincidence.
-  \item \textbf{Per-process hash salting.} Python's built-in \code{hash()} for strings is
-  randomized per process (\code{PYTHONHASHSEED}). Ingestion and querying run in different
-  processes, so the same word hashes differently---meaning that \emph{even if the moduli matched},
-  the indices would still not align.
+  \item \textbf{Index-space mismatch (100{,}000 vs 30{,}000).} Ingestion reduced modulo 100{,}000 but
+  query modulo 30{,}000, so even identical hash values usually landed on different indices.
+  \item \textbf{Per-process hash salting.} Python's built-in \code{hash()} for strings is randomized
+  per process (\code{PYTHONHASHSEED}). Ingestion and querying run in different processes, so the same
+  word hashed differently---even if the moduli had matched, the indices would still not align.
 \end{enumerate}
 
+The result: the channel returned essentially \textbf{no matches}, so ``hybrid'' silently ran as
+\textbf{dense-only}. An earlier evaluation draft reflected this exactly---hybrid scored almost
+identically to dense ($0.907$ vs $0.905$), because the fusion step had nothing real to fuse.
+
 \begin{observation}
-The sparse channel contributes essentially \textbf{no real keyword matches} in the current build;
-dense retrieval carries the system. This is exactly consistent with the evaluation
-(Chapter~\ref{ch:eval}), where \emph{hybrid} scores almost identically to \emph{dense}
-($0.907$ vs $0.905$): if sparse were contributing real signal, hybrid would separate further. The
-fusion machinery (RRF) is correct and fully wired---it is simply fusing a strong dense list with a
-near-empty sparse list. The fix (a stable hash such as \code{hashlib}, or a learned sparse encoder
-like SPLADE) is recorded in Chapter~\ref{ch:journey}. The defect is documented rather than quietly
-patched so the Chapter~\ref{ch:eval} numbers remain attributable to the system that was measured.
+\textbf{The fix and its effect.} Both sides were changed to a stable \code{hashlib.md5} hash in one
+shared 100{,}000-dim space, and the documents were re-indexed (the reranker pool was also widened to
+top-8 with a per-source diversity cap). After the fix, the channel works: dense and hybrid now
+retrieve \emph{different} contexts on \textbf{all 30} evaluation questions, and hybrid is best on
+\textbf{both} metrics (Chapter~\ref{ch:eval}). A \emph{learned} sparse encoder (SPLADE, FastEmbed
+BM25) remains the production upgrade, recorded in Chapter~\ref{ch:journey}.
 \end{observation}
 
 %==============================================================================
@@ -799,7 +939,7 @@ chat). Simpler methods are this pipeline with later stages removed.
 \node[box, below left=10mm and 0mm of emb, minimum width=28mm] (dense) {dense\_retrieve\\\scriptsize cosine, top 20};
 \node[box, below right=10mm and 0mm of emb, minimum width=28mm] (sparse) {sparse\_retrieve\\\scriptsize BM25-style, top 20};
 \node[box, below=22mm of emb, minimum width=30mm] (rrf) {rrf\_fusion\\\scriptsize $k{=}60$, dedup, cap 40};
-\node[box, below=8mm of rrf, minimum width=30mm] (rr) {rerank\\\scriptsize cross-encoder, top 5};
+\node[box, below=8mm of rrf, minimum width=30mm] (rr) {rerank\\\scriptsize cross-encoder, top 8};
 \node[accentbox, below=8mm of rr, minimum width=34mm] (out) {Top-5 parents $\to$ generation};
 \draw[arr] (q)--(filt); \draw[arr] (filt)--(emb);
 \draw[arr] (emb) -- (dense); \draw[arr] (emb) -- (sparse);
@@ -915,13 +1055,15 @@ together, letting attention relate every query token to every document token---f
 costly, which is why it runs only on the $\sim$40 fused candidates. Pragya uses
 \code{cross-encoder/ms-marco-MiniLM-L-6-v2} (sentence-transformers, $\sim$85\,MB, loaded once into a
 module-level singleton). It scores \code{(query, parent\_text)} pairs---\emph{not} \code{child\_text}
----because the parent is what the LLM actually reads, then keeps the top 5.
+---because the parent is what the LLM actually reads, then keeps the top 8 (under a per-source
+diversity cap), which parent-text deduplication later collapses to $\sim$4 blocks.
 
 \begin{observation}
 \textbf{Reranking is not a free lunch.} Intuitively a cross-encoder should only help. On Pragya's
 corpus it does \emph{not}: \code{hybrid\_rerank} scores lowest of the three methods, with faithfulness
-dropping to $0.75$. The likely mechanism is \textbf{over-pruning}---cutting aggressively to top-5
-parents sometimes drops a context block the answer needed, and an answer missing a source scores
+dropping to $0.777$. The mechanism is \textbf{over-pruning}---keeping the top 8 and then deduplicating
+by parent text leaves the generator only $\sim$4 context blocks (versus $\sim$7--8 for the other
+methods), so it sometimes loses a block the answer needed, and an answer missing a source scores
 worse on faithfulness. Full treatment in Section~\ref{sec:findings}.
 \end{observation}
 
@@ -941,8 +1083,8 @@ Embed query (asymmetric) & \checkmark & \checkmark & \checkmark\\ \hline
 Dense retrieve (top 20, cosine) & \checkmark & \checkmark & \checkmark\\ \hline
 Sparse retrieve (top 20, BM25-style) & --- & \checkmark & \checkmark\\ \hline
 RRF fusion ($k{=}60$, cap 40) & --- & \checkmark & \checkmark\\ \hline
-Cross-encoder rerank (top 5) & --- & --- & \checkmark\\ \hline\hline
-Typical output cardinality & up to 20 & up to 40 & exactly 5\\ \hline
+Cross-encoder rerank (top 8, diversity-capped) & --- & --- & \checkmark\\ \hline\hline
+Typical output cardinality & up to 20 & up to 40 & $\sim$4 (top 8, deduped)\\ \hline
 Relative cost & 1 embed + 1 search & 1 embed + 2 searches & + $\sim$40 cross-enc.\\ \hline
 \end{tabularx}
 \end{table}
@@ -952,8 +1094,8 @@ search uses \code{dense} directly, and all three are compared head-to-head only 
 harness.
 
 \begin{keyidea}
-\textbf{The K-asymmetry caveat.} The methods return different numbers of contexts (dense $\approx 8$
-deduped parents, hybrid $\approx 12$, rerank exactly 5). A fair metric comparison cannot score ``all
+\textbf{The K-asymmetry caveat.} The methods return different numbers of contexts (dense $\approx 7$
+deduped parents, hybrid $\approx 8$, rerank $\approx 4$). A fair metric comparison cannot score ``all
 returned contexts.'' The evaluation caps scoring to a fixed top-3 (context precision) and top-2
 (faithfulness), turning the comparison into a clean precision@$K$ across all three methods
 (Chapter~\ref{ch:eval}).
@@ -1574,7 +1716,8 @@ top-2 (faithfulness), making the comparison a clean precision@$K$. The cited blo
 
 \section{The 30-Question Benchmark Set}
 The benchmark (\code{test\_questions.py}) is 30 ground-truth Q/A pairs authored directly from the six
-core Infovance documents---every question answerable from the text (RAGAS metrics are only meaningful
+core Infovance documents (the searched corpus also includes a seventh, an IT incident report, as an
+unqueried distractor)---every question answerable from the text (RAGAS metrics are only meaningful
 when the ground truth is present in the searched corpus). Figure~\ref{fig:cats} shows the category
 distribution.
 
@@ -1653,9 +1796,9 @@ precision@3 by Groq, faithfulness is @2 by local qwen2.5):
 \rowcolor{ink}
 {\color{white}\textbf{Method}} & {\color{white}\textbf{Faithfulness}} & {\color{white}\textbf{Context Precision}} & {\color{white}\textbf{Average}} & {\color{white}\textbf{Cells scored}}\\
 \hline
-Dense (A) & 0.873 & 0.936 & \textbf{0.905} & 30 / 30\\ \hline
-Hybrid (B) & 0.886 & 0.928 & \textbf{0.907} & 29 / 30\\ \hline
-Hybrid + Rerank (C) & 0.750 & 0.900 & \textbf{0.825} & 30 / 30\\ \hline
+Dense (A) & 0.873 & 0.933 & \textbf{0.903} & 30 / 30\\ \hline
+Hybrid (B) & \textbf{0.890} & \textbf{0.939} & \textbf{0.914} & 30 / 30\\ \hline
+Hybrid + Rerank (C) & 0.777 & 0.903 & \textbf{0.840} & 30 / 30\\ \hline
 \end{tabular}
 \end{table}
 
@@ -1672,8 +1815,8 @@ Hybrid + Rerank (C) & 0.750 & 0.900 & \textbf{0.825} & 30 / 30\\ \hline
   enlarge x limits=0.25, ymajorgrids, legend pos=south west,
   legend style={font=\small}, tick label style={font=\small},
 ]
-\addplot[fill=ink, draw=ink] coordinates {(A,0.873)(B,0.886)(C,0.750)};
-\addplot[fill=amber, draw=amberdark] coordinates {(A,0.936)(B,0.928)(C,0.900)};
+\addplot[fill=ink, draw=ink] coordinates {(A,0.873)(B,0.890)(C,0.777)};
+\addplot[fill=amber, draw=amberdark] coordinates {(A,0.933)(B,0.939)(C,0.903)};
 \legend{Faithfulness, Context precision}
 \end{axis}
 \end{tikzpicture}
@@ -1695,47 +1838,53 @@ three; faithfulness (ink) collapses for hybrid+rerank---the headline negative re
   nodes near coords, nodes near coords style={font=\small, /pgf/number format/fixed, /pgf/number format/precision=3},
   enlarge x limits=0.3, ymajorgrids, tick label style={font=\small},
 ]
-\addplot[fill=amber, draw=amberdark] coordinates {(A,0.905)(B,0.907)(C,0.825)};
+\addplot[fill=amber, draw=amberdark] coordinates {(A,0.903)(B,0.914)(C,0.840)};
 \end{axis}
 \end{tikzpicture}
 }% end fitwidth
-\caption{Average of the two metrics. Hybrid (B) edges out dense (A) by only $0.002$; hybrid+rerank (C)
-is clearly worst. The A--B near-tie is consistent with the non-functional sparse channel
-(Section~\ref{sec:sparse}).}
+\caption{Average of the two metrics. Hybrid (B) is best ($0.914$ vs dense $0.903$); hybrid+rerank (C)
+is clearly worst. With the sparse channel repaired (Section~\ref{sec:sparse}), B's edge over A is a
+genuine retrieval effect rather than an artifact.}
 \label{fig:avg}
 \end{figure}
 
-The A$\to$C change per metric: faithfulness \textbf{$-0.123$} ($0.873 \to 0.750$) and context precision
-\textbf{$-0.036$} ($0.936 \to 0.900$). Adding the full reranking stage moved \emph{both} metrics in the
-wrong direction on this corpus.
+The A$\to$C change per metric: faithfulness \textbf{$-0.096$} ($0.873 \to 0.777$) and context precision
+\textbf{$-0.030$} ($0.933 \to 0.903$). Adding the full reranking stage moved \emph{both} metrics in the
+wrong direction. Going A$\to$B, by contrast, nudged \emph{both} up (faithfulness $+0.017$, context
+precision $+0.006$)---small, but consistent.
 
 \section{Honest Findings \& Limitations}
 \label{sec:findings}
-\paragraph{Finding 1 --- Hybrid is best, but only barely; dense is essentially tied.} Hybrid (B) takes
-the top average ($0.907$) over dense ($0.905$)---a difference of $0.002$, within noise. On this corpus,
-adding the sparse channel barely changed anything, exactly as Section~\ref{sec:sparse} predicts: the
-sparse vectors do not align between ingestion and query, so ``hybrid'' is effectively dense fused with a
-near-empty list. A working sparse channel is the single change most likely to separate B from A.
+\paragraph{Finding 1 --- Hybrid is best on \emph{both} metrics, by a small but consistent margin.}
+Hybrid (B) takes the top average ($0.914$) over dense ($0.903$), and---unlike the earlier broken
+run---is now ahead on faithfulness ($0.890$ vs $0.873$) \emph{and} context precision ($0.939$ vs
+$0.933$). With the sparse channel repaired (Section~\ref{sec:sparse}), dense and hybrid retrieve
+\emph{different} contexts on \textbf{all 30} questions, so the gap is a genuine retrieval effect, not an
+artifact: the context-precision judge is deterministic given a context set, and B differs from A on 12
+of 30 questions. We do \emph{not} claim statistical significance at $n=30$, but the direction is
+consistent across both metrics---which the earlier (silently dense-only) run could never show.
 
 \paragraph{Finding 2 --- Reranking \emph{degraded} quality, via over-pruning.} The most elaborate
 pipeline (C) scored \emph{lowest}, and the damage is concentrated in faithfulness ($0.87$--$0.89 \to
-0.75$). The plausible mechanism is over-pruning: cutting to a top-5 of parents sometimes drops a context
-block the answer needed, and an answer missing a supporting source is judged less faithful. On a small,
-clean, single-domain corpus where dense retrieval is already precise, the cross-encoder's pruning
-removes more signal than its reranking adds. \textbf{More pipeline is not automatically better}---and it
-took a real evaluation to show it.
+0.777$). The mechanism is over-pruning: keeping the top 8 (with a per-source diversity cap) and then
+deduplicating by parent text leaves the generator only $\sim$4 context blocks (versus $\sim$7--8 for the
+other methods), so it sometimes loses a block the answer needed, and an answer missing a supporting
+source is judged less faithful. On a small, clean, single-domain corpus where dense retrieval is already
+precise, the cross-encoder's pruning removes more signal than its reranking adds. \textbf{More pipeline
+is not automatically better}---and it took a real evaluation to show it.
 
 \paragraph{Finding 3 --- The differences are small because the corpus is easy.} All three methods score
-$0.90+$ on context precision and $\geq 0.75$ on faithfulness. Six well-structured policy documents with
+$0.90+$ on context precision and $\geq 0.77$ on faithfulness. Seven well-structured policy documents with
 distinct vocabularies are a relatively easy retrieval target; the methods would likely separate more on
 a larger, noisier, more overlapping corpus.
 
 \paragraph{Limitations, stated plainly.}
 \begin{itemize}
-  \item \textbf{The sparse channel is non-functional} (Section~\ref{sec:sparse}), so ``hybrid'' here is
-  not a fully realized hybrid; read the B-vs-A comparison with that caveat.
-  \item \textbf{One faithfulness cell is missing for hybrid} (29/30 scored---one question timed out on
-  the local 7B and was recorded as NaN, then excluded), so hybrid's faithfulness is a mean over 29.
+  \item \textbf{The sparse vector is a hashed term-frequency approximation, not a learned encoder.} It
+  now works (Section~\ref{sec:sparse}), but a learned model (SPLADE, FastEmbed BM25) would likely widen
+  hybrid's edge; the small A-vs-B margin partly reflects this approximation.
+  \item \textbf{The corpus is small and clean}---seven policy documents where dense retrieval is already
+  strong gives hybrid and reranking limited room to prove themselves.
   \item \textbf{The K-asymmetry} is controlled by capping to precision@3 / faithfulness@2, a
   normalization rather than a perfect equalization.
   \item \textbf{Judges are 7--8B models}---independent of the generator (the key property) but smaller
@@ -1812,12 +1961,14 @@ Boilerplate contamination & Repeated letterhead made chunks from different docs 
 Over-citation / dup parents & Overlapping children mapped to the same parent. & \code{\_dedupe\_by\_parent} (first-200-char key), shared by prompt-building and source-extraction.\\ \hline
 Qdrant client API change & \code{qdrant-client} 1.18 removed \code{client.search(...)}. & Switch to \bcode{client.query\_points(query=..., using="dense"|"sparse")}.\\ \hline
 Embedding deprecation & \code{text-embedding-004} was deprecated 2026-01-14. & Move to \code{gemini-embedding-001} with Matryoshka 3072$\to$768.\\ \hline
+Sparse channel silently dead & Ingestion/query hashed words into different spaces (100k vs 30k) with per-process-salted \code{hash()}, so sparse found no matches and ``hybrid'' silently ran as dense-only---visible only as ``hybrid ties dense'' in an early eval. & Stable \code{hashlib.md5} hash in one shared 100{,}000-dim space; re-index all docs; widen rerank to top-8 + diversity cap. Re-running shows hybrid best on both metrics.\\ \hline
 \end{longtable}
 \end{small}
 
-The sparse-channel index/hash defect (Section~\ref{sec:sparse}) is the one significant bug that remains
-\emph{open} in the evaluated build; it is documented rather than silently patched so the
-Chapter~\ref{ch:eval} numbers stay attributable to the measured system.
+The sparse-channel index/hash defect (Section~\ref{sec:sparse}) was the subtlest bug in the project: it
+threw no error, only a \emph{non-result} in the evaluation, and finding it required treating ``hybrid
+ties dense'' as suspicious rather than acceptable. Fixing it and re-running the study is what makes the
+Chapter~\ref{ch:eval} comparison a real one.
 
 \section{Known Limitations \& Future Work}
 \begin{small}
@@ -1833,7 +1984,7 @@ Chapter~\ref{ch:eval} numbers stay attributable to the measured system.
 \endhead
 \hline
 \endfoot
-Sparse retrieval & Ingestion/query hash indices don't align (100k vs 30k; salted \code{hash()}). & Stable hash (\code{hashlib}) with a shared space, or a learned encoder (SPLADE / FastEmbed BM25).\\ \hline
+Sparse retrieval & Now a working but \emph{approximate} hashed term-frequency vector (the index/hash bug is fixed). & Replace with a learned sparse encoder (SPLADE / FastEmbed BM25) for a stronger keyword channel.\\ \hline
 Faithfulness judge & A local 7B is weaker than the generator; one cell timed out. & A paid Groq tier or a frontier judge.\\ \hline
 Reranking & Degrades faithfulness via over-pruning on this corpus. & Adaptive top-$n$; skip rerank when dense confidence is high.\\ \hline
 Scanned PDFs & Image-only pages are skipped. & OCR (e.g. Tesseract) as a fallback.\\ \hline
@@ -1896,13 +2047,13 @@ vector). One decision buys correctness \emph{and} performance---the hallmark of 
 bet.
 
 \section{The Data Tells a Coherent Story}
-The three most striking numbers in the evaluation are not independent---they are the same phenomenon
-seen three ways. The near-tie between dense ($0.905$) and hybrid ($0.907$), the documented sparse-index
-defect (Section~\ref{sec:sparse}), and the small absolute spread of all scores are mutually consistent:
+The numbers in the evaluation are not independent---they tell one coherent story. Hybrid's small,
+\emph{consistent} edge over dense ($0.914$ vs $0.903$, ahead on both metrics), the now-repaired sparse
+channel (Section~\ref{sec:sparse}), and the small absolute spread of all scores are mutually consistent:
 \textbf{a corpus easy enough that dense retrieval alone nearly saturates the metrics leaves little room
-for any second signal to matter}---and the second signal (sparse) is, in this build, not actually
-present. The evaluation thus measures two things at once: the retrieval methods, and the corpus's
-difficulty. A harder corpus is the lever that would make the method differences legible.
+for a second signal to add much}---so the working sparse channel helps, but only modestly. The
+evaluation thus measures two things at once: the retrieval methods, and the corpus's difficulty. A
+harder corpus is the lever that would make the method differences larger.
 
 \section{Cost Versus Quality --- The Reranker's Verdict}
 Plotting the three methods on cost against average quality (Figure~\ref{fig:costquality}) makes the
@@ -1919,10 +2070,10 @@ the efficient frontier; the reranker pays the most (a forward pass over $\sim$40
   xticklabels={dense\\(1 search), hybrid\\(2 searches), hybrid+rerank\\(+$\sim$40 cross-enc.)},
   xticklabel style={align=center, font=\scriptsize}, ymajorgrids, tick label style={font=\small},
 ]
-\addplot[only marks, mark=*, mark size=3.2pt, color=amberdark] coordinates {(1,0.905)(2,0.907)(3,0.825)};
-\node[anchor=south, font=\scriptsize] at (axis cs:1,0.905) {Dense 0.905};
-\node[anchor=south, font=\scriptsize] at (axis cs:2,0.907) {Hybrid 0.907};
-\node[anchor=north, font=\scriptsize] at (axis cs:3,0.825) {Rerank 0.825};
+\addplot[only marks, mark=*, mark size=3.2pt, color=amberdark] coordinates {(1,0.903)(2,0.914)(3,0.840)};
+\node[anchor=south, font=\scriptsize] at (axis cs:1,0.903) {Dense 0.903};
+\node[anchor=south, font=\scriptsize] at (axis cs:2,0.914) {Hybrid 0.914};
+\node[anchor=north, font=\scriptsize] at (axis cs:3,0.840) {Rerank 0.840};
 \end{axis}
 \end{tikzpicture}
 }% end fitwidth

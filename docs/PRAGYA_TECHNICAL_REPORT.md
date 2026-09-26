@@ -35,6 +35,7 @@
 1. [Abstract](#abstract)
 2. [Document Purpose & How to Read It](#document-purpose--how-to-read-it)
 3. [Executive Summary](#executive-summary-non-technical)
+4. [Key Concepts & Keywords — A Plain-Language Primer](#key-concepts--keywords--a-plain-language-primer)
 4. [System Overview](#1-system-overview)
    - 1.1 [What Pragya Is](#11-what-pragya-is)
    - 1.2 [The Problem It Solves](#12-the-problem-it-solves)
@@ -50,7 +51,7 @@
    - 2.5 [Hierarchical Chunking — The Math](#25-hierarchical-chunking--the-math)
    - 2.6 [Embedding — Gemini & Matryoshka](#26-embedding--gemini--matryoshka)
    - 2.7 [The Qdrant Collection](#27-the-qdrant-collection)
-   - 2.8 [The Sparse Channel & Its Honest Limitations](#28-the-sparse-channel--its-honest-limitations)
+   - 2.8 [The Sparse Channel: A Bug We Found and Fixed](#28-the-sparse-channel-a-bug-we-found-and-fixed)
 6. [Retrieval Pipeline — The Research Core](#3-retrieval-pipeline--the-research-core)
    - 3.1 [The Full Query Pipeline](#31-the-full-query-pipeline)
    - 3.2 [Dense Retrieval — Cosine Similarity](#32-dense-retrieval--cosine-similarity)
@@ -194,12 +195,185 @@ platform additionally produced a small research result comparing retrieval strat
 of the kind suitable for an academic venue.
 
 **The honest bottom line.** Measured on a thirty-question benchmark against the
-company corpus, Pragya's answers score around **0.87–0.94 on faithfulness** (how well
+company corpus, Pragya's answers score around **0.78–0.89 on faithfulness** (how well
 the answer sticks to its sources) and **0.90–0.94 on context precision** (how relevant
-the retrieved material is) depending on configuration — strong numbers for a system of
-this size. The evaluation also surfaced a counter-intuitive finding worth stating
+the retrieved material is) depending on configuration — and the deployed hybrid setup sits
+near the top of both ranges (0.89 / 0.94), strong numbers for a system of this size. The evaluation also surfaced a counter-intuitive finding worth stating
 plainly: the most elaborate retrieval pipeline was *not* the best one, which is exactly
 the kind of result a careful engineering study exists to find.
+
+---
+
+## Key Concepts & Keywords — A Plain-Language Primer
+
+> **Read this section if you want to be able to explain Pragya to anyone.** It defines every
+> important term in plain language, says *why* it matters, and shows *how Pragya uses it*. No
+> prior RAG knowledge assumed. The rest of the report goes deep; this is the map.
+
+### The whole project in 60 seconds
+
+Pragya is an internal "ask-your-documents" assistant. An employee types a normal question —
+*"How many casual leaves do I get?"* — and Pragya answers in plain English **with a citation
+to the exact file and page**. It does this by (1) chopping every uploaded document into small
+pieces, (2) turning those pieces into numbers a computer can compare ("embeddings"), (3)
+finding the few pieces most relevant to the question using **two complementary search
+methods at once** (meaning-based + keyword-based), (4) feeding only those pieces to a large
+language model with strict instructions to answer *only* from them and cite each claim, and
+(5) enforcing that you can only ever see documents your department is allowed to see. It is
+**not** a chatbot that makes things up — every sentence is traceable to a source.
+
+### The journey of one question (the mental model)
+
+```text
+question ──► [embed it] ──►┌─ dense search (meaning)  ─┐
+                           ├─ sparse search (keywords) ─┤──► fuse (RRF) ──► rerank ──► top few
+                           └────────────────────────────┘                                │
+   access filter applied at every search ▲                                               ▼
+                                                          assemble into a strict, cite-only
+                                                          prompt ──► LLM ──► streamed answer
+                                                          with [Source: file · page]
+```
+
+If you can narrate that diagram, you can explain the system. The rest is detail.
+
+### A · Retrieval & RAG — the core idea
+
+- **RAG (Retrieval-Augmented Generation)** — Instead of trusting a language model's memory,
+  you first *retrieve* relevant text from your own documents and *augment* the model's prompt
+  with it, so the answer is grounded in real sources. *Why it matters:* it's how you get
+  trustworthy, up-to-date, citable answers without retraining a model. *Explain it as:* "open-book
+  exam for an AI — it answers from the documents in front of it, not from memory."
+
+- **Retrieval is the bottleneck.** Modern LLMs write fluent answers *if* given the right
+  passages; the hard part is **finding** those passages. That's why this project is mostly
+  about retrieval quality, not the language model.
+
+- **Embedding** — A list of numbers (a *vector*, here 768 of them) that captures the *meaning*
+  of a piece of text. Texts with similar meaning get similar vectors. *In Pragya:* every
+  chunk and every question is embedded by Google's `gemini-embedding-001`.
+
+- **Dense retrieval (semantic search)** — Search by *meaning*: embed the question, then find
+  the chunks whose embeddings are closest (by **cosine similarity**, the angle between two
+  vectors). Catches paraphrases — "time off" finds "leave policy" even with no shared words.
+
+- **Sparse retrieval / BM25 (keyword search)** — Search by *exact words*. Great for things
+  embeddings miss: abbreviations and codes like "CL" (casual leave) or an ID like "HR-118",
+  which have no meaningful "neighborhood" in embedding space. *In Pragya:* a lightweight
+  **BM25-style** approximation (hash each word to an index, weight by how often it appears).
+
+- **Hybrid retrieval** — Run dense **and** sparse together and combine them. *Why:* meaning
+  and keywords are complementary; using both catches more than either alone. This is one of
+  Pragya's three defining features.
+
+- **RRF (Reciprocal Rank Fusion)** — The simple, robust way to merge two ranked lists into
+  one. It scores each result by `1/(k + rank)` (with `k=60`) and adds the scores, so a chunk
+  that ranks well in *both* lists rises to the top. *Why this and not just adding scores:*
+  dense (cosine) and sparse (BM25) scores aren't on the same scale, so you fuse by **rank**,
+  not raw score. *Explain it as:* "two judges vote; things both judges rank highly win."
+
+- **Cross-encoder reranker** — A small model that re-reads each *(question, chunk)* pair
+  *together* and scores how well the chunk answers the question — more accurate than embedding
+  similarity, but slower, so it's only run on the ~40 already-shortlisted candidates. *In
+  Pragya:* `ms-marco-MiniLM-L-6-v2`, keeping the top 8. *Caution learned here:* on a small,
+  clean corpus it can **over-prune** and hurt — see the evaluation.
+
+- **Vector database (Qdrant)** — A database built to store embeddings and find nearest
+  neighbors fast. *In Pragya:* one Qdrant collection holds both a dense and a sparse named
+  vector per chunk, plus metadata (which document, which department, page number).
+
+### B · Chunking & embeddings — preparing the documents
+
+- **Chunking** — Splitting a document into pieces small enough to retrieve precisely. You
+  can't embed a whole 20-page PDF as one vector; you'd lose all precision.
+
+- **Hierarchical / parent–child chunking** — Pragya's trick: it makes **small "child" chunks**
+  (~256 tokens) for *searching* (precise) and **large "parent" chunks** (~1024 tokens) for
+  *answering* (enough context). You retrieve on children but feed parents to the model. *Best
+  of both:* precise matching + rich context.
+
+- **Token** — Roughly a word-piece; the unit LLMs count. "256 tokens" ≈ a short paragraph.
+
+- **Overlap** — Consecutive chunks share ~20% of their text so a sentence split across a
+  boundary isn't lost to both chunks.
+
+- **Matryoshka embeddings / truncation** — `gemini-embedding-001` outputs 3072 numbers, but
+  the model is trained so the *first* 768 already carry most of the meaning (like nested
+  Matryoshka dolls). Pragya keeps **768** — a smaller, faster index with negligible quality
+  loss. *Explain it as:* "keep the first 768 of 3072 dimensions; they hold the gist."
+
+- **Asymmetric embedding** — Telling the embedder whether it's encoding a *question* or a
+  *document* (`retrieval_query` vs `retrieval_document`). They play different roles, so
+  declaring the role improves matching. A common silent quality bug is getting this wrong.
+
+### C · Generation, citations & trust
+
+- **LLM (Large Language Model)** — The model that writes the final answer. *In Pragya:* Gemini
+  Flash, chosen for speed and low cost; it's the easily-swappable part.
+
+- **Citation-grounded generation** — The prompt *forces* the model to answer only from the
+  provided chunks and tag every claim like `[Source: HR_Leave_Policy.pdf · p.4]`. If the
+  answer isn't in the chunks, it must say so. *This is what makes answers checkable.*
+
+- **Hallucination** — When an LLM states something confident but unsupported. Grounding +
+  citations + the "answer only from context" instruction are the defenses against it.
+
+- **SSE (Server-Sent Events) / streaming** — The answer is sent to the browser token-by-token
+  as it's written, so the user sees it appear live instead of waiting for the whole thing.
+
+### D · Access control & auth — the "walls that hold"
+
+- **RBAC (Role-Based Access Control)** — Permissions based on who you are. *In Pragya:* three
+  roles (admin / user / viewer) and three document visibility tiers (**company** = everyone,
+  **department** = your team, **personal** = only you).
+
+- **Enforced at the vector layer** — The defining security idea: the permission check is a
+  **filter on the search query itself**, so forbidden chunks are *never even retrieved* — not
+  fetched, not ranked, not shown. An HR user literally cannot pull an IT document, by
+  construction, not by a hopeful `if`-check in app code.
+
+- **JWT (JSON Web Token)** — A signed token the server gives you at login that proves who you
+  are (and your department/role) on every later request, without a database lookup. *In
+  Pragya:* email + password login, bcrypt-hashed passwords, 8-hour tokens — no OAuth.
+
+### E · Evaluation — how we proved it works
+
+- **RAGAS** — A toolkit for scoring RAG systems with an LLM acting as judge.
+
+- **Faithfulness** — Of the claims in the answer, how many are actually supported by the
+  retrieved context? High faithfulness = not hallucinating. *(Pragya's hybrid: 0.890.)*
+
+- **Context precision** — Of the chunks that were retrieved, how many are actually relevant?
+  High = retrieval isn't padding the prompt with junk. *(Pragya's hybrid: 0.939.)*
+
+- **Independent / bias-controlled judges** — The model that *writes* answers (Gemini) is never
+  the model that *grades* them. Faithfulness is judged by a local `qwen2.5:7b`, context
+  precision by Groq's `llama-3.1-8b` — so the system can't flatter itself. This is the
+  evaluation's central methodological claim.
+
+- **Controlled comparison (A/B/C)** — Three configurations on the *same* 30 questions: **A**
+  dense-only, **B** hybrid, **C** hybrid + reranker. Holding everything else fixed isolates
+  the effect of each retrieval stage. *Result:* B is best on both metrics; C (the most complex)
+  is worst — a reminder that **more pipeline isn't automatically better.**
+
+### F · The stack (in one line each)
+
+**FastAPI** (async Python web framework) · **async/await** (handle many requests without
+blocking) · **SQLAlchemy** (talk to the database in Python objects) · **Alembic** (versioned
+database schema migrations) · **Neon** (cloud PostgreSQL — stores users, docs metadata, chat
+logs) · **Qdrant** (the vector database) · **PyMuPDF** (read PDFs *with page numbers*, which
+the citations depend on) · **Next.js 15** (the React frontend) · **Docker Compose** (run
+Qdrant + backend + frontend with one command) · **bcrypt** (one-way password hashing).
+
+### The bug worth telling in an interview
+
+The single most instructive moment: the sparse keyword channel was **silently broken** for a
+while — ingestion and querying hashed words into different number spaces, and Python's
+`hash()` is randomized per process, so the two sides never matched. It threw **no error**; it
+only showed up as *"hybrid mysteriously scores the same as dense"* in the evaluation. The
+lesson — *treat a surprising non-result as a clue, not an answer* — led to finding it, fixing
+it (a stable hash + one shared space), re-indexing, and re-running the study to get the real
+comparison. (Full story: Section 2.8.) That's the kind of debugging-with-measurement story
+that explains the whole project's value in one breath.
 
 ---
 
@@ -291,9 +465,9 @@ has no useful embedding neighborhood. Pragya runs dense retrieval **and** a spar
 keyword retrieval in parallel and fuses the two ranked lists with **Reciprocal Rank
 Fusion (RRF)**. A document that ranks well in *both* methods rises to the top — and
 agreement between two different retrieval systems is a strong relevance signal. (The
-honest state of the sparse channel in the current build is documented in Section 2.8;
-it is implemented and wired through the whole pipeline, with a known indexing defect
-that the evaluation later exposes.)
+sparse channel had an indexing bug that silently disabled it in an earlier build; how it
+was found and fixed is documented in Section 2.8, and the corrected evaluation in
+Section 7 shows the channel now contributing.)
 
 **2. Citation grounding on every answer.**
 The generation prompt instructs the model to answer *only* from the provided context
@@ -938,66 +1112,61 @@ visibility filter matches on (Section 4.4).
 `MatchValue` compares by *exact type*; a raw `uuid.UUID` would match zero points with no
 error — a subtle trap the code calls out and avoids.
 
-### 2.8 The Sparse Channel & Its Honest Limitations
+### 2.8 The Sparse Channel: A Bug We Found and Fixed
 
-Pragya implements a sparse (keyword) vector alongside the dense one, intended as a
-BM25-style signal that catches exact tokens dense retrieval misses — abbreviations like
-"CL" (casual leave) that have no useful embedding neighborhood. This section documents
-how it is built **and** a real defect the evaluation exposed. Reporting it is the point:
-a technical report that hides a known limitation is worth less than one that finds it.
+Pragya implements a sparse (keyword) vector alongside the dense one — a BM25-style signal
+that catches exact tokens dense retrieval misses, like abbreviations such as "CL" (casual
+leave) that have no useful embedding neighborhood. This section documents a real defect an
+earlier build had, **and the fix that resolved it** — because *how* a bug was found and
+corrected is one of the most instructive parts of this project.
 
-**How the sparse vector is built.** The ingestion side (`build_sparse_vector`) and the
-query side (`sparse_retrieve`) each turn text into a sparse vector by hashing words into
-an index space and using term frequency as the value:
+**How the sparse vector is built (current, corrected).** The ingestion side
+(`build_sparse_vector`) and the query side (`sparse_retrieve`) each turn text into a sparse
+vector by hashing words into a **shared** index space, with term frequency as the value:
 
 ```text
-INGESTION (build_sparse_vector, ingestion_service.py):
+INGESTION and QUERY — now identical on both sides:
     tokens  = lowercase, strip non-alphanumeric, split
-    index   = abs(hash(word)) % 100_000          ← index space = 100,000
-    value   = count(word) / total_tokens          ← normalized term frequency
-
-QUERY (sparse_retrieve, retrieval_service.py):
-    index   = abs(hash(word)) % 30_000            ← index space =  30,000  (SPARSE_INDEX_SPACE)
-    value   = raw count(word)                      ← unnormalized term frequency
+    index   = int(hashlib.md5(word).hexdigest(), 16) % 100_000   ← shared 100,000-dim space
+    value   = term frequency
 ```
 
-A sparse dot-product in Qdrant only contributes a non-zero score when a query index and
-a stored index **coincide**. For that to happen for a given word, the ingestion-time and
-query-time index for that word must be equal. They are not, for **two independent
-reasons**:
+A sparse dot-product in Qdrant scores only when a query index and a stored index
+**coincide** — i.e. the same word must hash to the same index at ingestion and query time.
+In the corrected build it does, because both sides use the **same deterministic hash** and
+the **same modulus**.
 
-1. **Index-space mismatch (100,000 vs 30,000).** Ingestion reduces modulo 100,000;
-   query reduces modulo 30,000. `abs(hash(w)) % 100000` and `abs(hash(w)) % 30000` are
-   equal only by coincidence, so even identical hash values would usually land on
-   different indices.
+**The bug (earlier build).** That was not always true. The original implementation had two
+independent defects that made the channel silently inert:
 
-2. **Per-process hash salting (the deeper problem).** Python's built-in `hash()` for
-   strings is **randomized per process** via `PYTHONHASHSEED` (a security default).
-   Ingestion runs in one process and querying in another, so `hash("leave")` differs
-   between them — meaning that *even if the moduli matched*, the same word would hash to
-   different indices at ingestion and query time. The sparse indices therefore do not
-   align across the two stages at all.
+1. **Index-space mismatch (100,000 vs 30,000).** Ingestion reduced modulo 100,000 but query
+   modulo 30,000, so even identical hash values usually landed on different indices.
 
-**The consequence, stated plainly.** The sparse channel contributes essentially **no
-real keyword matches** in the current build. Dense retrieval carries the system. This is
-exactly consistent with the evaluation result in Section 7, where the *hybrid*
-configuration scores almost identically to *dense* (average 0.907 vs 0.905) — if sparse
-were contributing meaningful signal, hybrid would separate further from dense. The fusion
-machinery (RRF) is correct and fully wired; it is simply fusing a strong dense list with
-a near-empty/noise sparse list.
+2. **Per-process hash salting (the deeper one).** Python's built-in `hash()` for strings is
+   **randomized per process** via `PYTHONHASHSEED` (a security default). Ingestion and
+   querying run in different processes, so `hash("leave")` differed between them — meaning
+   that *even if the moduli had matched*, the same word hashed to different indices at
+   ingestion and query time.
 
-**The honest fix.** Two changes would revive the channel: (a) unify the index space to a
-single shared constant, and (b) replace Python's salted `hash()` with a **stable** hash
-(e.g. `hashlib.md5`/`blake2` of the word, or — better — a real learned sparse encoder
-such as SPLADE or FastEmbed's BM25, which the code comments already name as the
-production path). Either makes ingestion and query indices deterministic and aligned.
-This is recorded as known future work in Section 8.
+The result: the sparse channel returned essentially **no matches**, so "hybrid" was
+silently running as **dense-only**. An earlier evaluation draft reflected this exactly —
+hybrid scored almost identically to dense (0.907 vs 0.905), because the fusion step had
+nothing real to fuse.
 
-> **Why keep it in the report rather than quietly fix it.** The system as evaluated had
-> this defect, and the evaluation numbers in Section 7 reflect it. Silently patching the
-> code and re-using the old numbers would make the report describe a system that was
-> never measured. The defect is documented, its effect on the results is quantified, and
-> the fix is specified — which is the correct engineering treatment of a finding.
+**The fix and its effect.** Both sides were changed to a stable `hashlib.md5` hash in a
+single shared 100,000-dim space, and the documents were re-indexed so the stored sparse
+vectors use the new hash. (The reranker pool was also widened to top-8 with a per-source
+diversity cap.) After the fix, the channel works: dense and hybrid now retrieve
+**different** contexts on **all 30** evaluation questions, and hybrid is the best method on
+**both** metrics (Section 7). The production-grade path — a *learned* sparse encoder such as
+SPLADE or FastEmbed BM25 — remains recorded as future work; our hashed term-frequency vector
+is a faithful approximation, not a learned model.
+
+> **Why this story stays in the report.** A bug that silently disables a whole retrieval
+> channel — and only shows up as "hybrid mysteriously ties dense" in an evaluation — is a
+> textbook example of why you measure, and why a non-obvious result deserves a second look
+> rather than a shrug. Finding it, explaining it, fixing it, and re-running the evaluation
+> is the engineering lesson worth keeping.
 
 ---
 
@@ -1108,13 +1277,14 @@ The implementation builds `{index: term_frequency}` by accumulating into a dict 
 duplicate index, which Qdrant rejects), then issues the search with `using="sparse"`,
 the shared visibility filter, and `limit=20`.
 
-> **Honesty pointer.** As established in Section 2.8, the sparse channel is built but
-> effectively non-functional in the current build, because the ingestion-time and
-> query-time hash indices do not align (index-space mismatch 100,000 vs 30,000, *and*
-> Python's per-process `hash()` salting). The mathematics above is correct and the code
-> path runs; it simply finds few real index intersections, so the sparse list contributes
-> little signal. The effect on the measured results is quantified in Section 7. The fix
-> (a stable hash or a learned sparse encoder) is recorded in Section 8.
+> **History pointer.** As detailed in Section 2.8, an earlier build of this channel was
+> silently non-functional: the ingestion-time and query-time hash indices did not align
+> (index-space mismatch 100,000 vs 30,000, *and* Python's per-process `hash()` salting), so
+> the sparse dot product found almost no shared indices. That bug was **fixed** (a stable
+> `hashlib.md5` hash in one shared 100,000-dim space), the documents were re-indexed, and
+> the corrected evaluation in Section 7 shows the channel now contributing — dense and
+> hybrid retrieve different contexts on all 30 questions. A *learned* sparse encoder (SPLADE,
+> FastEmbed BM25) is the remaining production upgrade, recorded in Section 8.
 
 ### 3.4 RRF Fusion — Formula & Worked Example
 
@@ -1218,15 +1388,17 @@ every query.
 what the language model will actually read when generating the answer, so relevance must
 be judged against the parent, not the shorter child that was used only as the retrieval
 key. The candidates are sorted by the cross-encoder score (a NumPy float, cast to a plain
-`float` so it serializes to JSON), and the **top 5** are returned for generation.
+`float` so it serializes to JSON), and the **top 8** (under a per-source diversity cap) are
+returned for generation, where parent-text deduplication collapses them to ~4 blocks.
 
 > **Empirical caveat — reranking is not free lunch.** Intuitively, adding a cross-encoder
 > should only help. On Pragya's corpus it does **not**: the evaluation (Section 7) shows
 > `hybrid_rerank` scoring *lowest* of the three methods, with faithfulness dropping from
-> ~0.87–0.89 to 0.75. The likely mechanism is **over-pruning** — by aggressively cutting
-> to a top-5 of parents, the reranker sometimes drops a context block the answer needed,
-> and an answer with a missing source scores worse on faithfulness. This is one of the
-> report's most useful findings and is treated fully in Section 7.5.
+> ~0.87–0.89 to **0.777**. The mechanism is **over-pruning** — keeping the top 8 (with a
+> per-source diversity cap) and then deduplicating by parent text leaves the generator only
+> ~4 context blocks (versus ~7–8 for the other methods), so it sometimes loses a block the
+> answer needed, and an answer with a missing source scores worse on faithfulness. This is
+> one of the report's most useful findings and is treated fully in Section 7.5.
 
 ### 3.6 The Three Methods as Configurations
 
@@ -1240,8 +1412,8 @@ method requires:
 | Dense retrieve (top 20, cosine) | ✓ | ✓ | ✓ |
 | Sparse retrieve (top 20, BM25-style) | — | ✓ | ✓ |
 | RRF fusion (`k=60`, cap 40) | — | ✓ | ✓ |
-| Cross-encoder rerank (top 5) | — | — | ✓ |
-| **Typical output cardinality** | up to 20 | up to 40 | **exactly 5** |
+| Cross-encoder rerank (top 8, diversity-capped) | — | — | ✓ |
+| **Typical output cardinality** | up to 20 | up to 40 | **~4 (top 8, parent-deduped)** |
 | **Relative cost** | 1 embed + 1 search | 1 embed + 2 searches | + ~40 cross-encoder passes |
 
 **Where each is used in the running system:**
@@ -1254,8 +1426,8 @@ method requires:
   place the methods are compared head-to-head (Section 7).
 
 > **The K-asymmetry caveat (foreshadowing Section 7).** Notice the three methods return
-> *different numbers* of contexts — dense yields up to 20 (≈8 after parent-dedup),
-> hybrid up to 40 (≈12 deduped), and rerank exactly 5. A fair metric comparison cannot
+> *different numbers* of contexts — dense yields up to 20 (≈7 after parent-dedup),
+> hybrid up to 40 (≈8 deduped), and rerank ≈4 (top 8, deduped). A fair metric comparison cannot
 > simply score "all returned contexts," because that would compare precision over
 > different list lengths. The evaluation addresses this by scoring a fixed **top-3** of
 > contexts per question for context precision, turning the comparison into a clean
@@ -2074,8 +2246,8 @@ deliberately uses exactly two, with documented reasons for excluding the rest:
   methods anyway.
 
 **The K-normalization (the fair-comparison control).** As foreshadowed in Section 3.6,
-the three methods return different numbers of contexts (dense ≈ 8 deduped parents, hybrid
-≈ 12, rerank exactly 5). Scoring "all returned contexts" would be an apples-to-oranges
+the three methods return different numbers of contexts (dense ≈ 7 deduped parents, hybrid
+≈ 8, rerank ≈ 4). Scoring "all returned contexts" would be an apples-to-oranges
 precision over different list lengths. The harness therefore caps scoring to a fixed
 **top-3 contexts** for context precision (`SCORING_TOP_K = 3`) and **top-2** for
 faithfulness (`FAITHFULNESS_TOP_K = 2`), turning the comparison into a clean precision@3 /
@@ -2163,28 +2335,29 @@ context precision is precision@3 by Groq, faithfulness is @2 by local qwen2.5):
 
 | Method | Faithfulness | Context Precision | **Average** | Cells scored |
 |--------|:------------:|:-----------------:|:-----------:|:------------:|
-| **Dense (A)** | 0.873 | 0.936 | **0.905** | 30 / 30 |
-| **Hybrid (B)** | 0.886 | 0.928 | **0.907** | 29 / 30 |
-| **Hybrid + Rerank (C)** | 0.750 | 0.900 | **0.825** | 30 / 30 |
+| **Dense (A)** | 0.873 | 0.933 | **0.903** | 30 / 30 |
+| **Hybrid (B)** | **0.890** | **0.939** | **0.914** | 30 / 30 |
+| **Hybrid + Rerank (C)** | 0.777 | 0.903 | **0.840** | 30 / 30 |
 
-A visual rendering of the same data (bars on a zoomed 0.70–0.95 scale to make the
-differences legible):
+Every cell is now scored over the full 30 questions (the earlier draft had a missing
+hybrid cell; this corrected run has none). A visual rendering of the same data (bars on a
+zoomed 0.70–0.95 scale to make the differences legible):
 
 ```text
 FAITHFULNESS (anti-hallucination)            scale 0.70 ───────────── 0.95
-  Dense (A)            █████████████████·········  0.873
-  Hybrid (B)           ███████████████████·······  0.886
-  Hybrid+Rerank (C)    █████·····················  0.750   ← sharp drop
+  Dense (A)            ██████████████████········  0.873
+  Hybrid (B)           ████████████████████······  0.890   ← best
+  Hybrid+Rerank (C)    ████████··················  0.777   ← sharp drop
 
 CONTEXT PRECISION@3 (retrieval relevance)    scale 0.70 ───────────── 0.95
-  Dense (A)            ████████████████████████··  0.936
-  Hybrid (B)           ███████████████████████···  0.928
-  Hybrid+Rerank (C)    ████████████████████······  0.900
+  Dense (A)            ████████████████████████··  0.933
+  Hybrid (B)           █████████████████████████·  0.939   ← best
+  Hybrid+Rerank (C)    █████████████████████·····  0.903
 
 AVERAGE OF THE TWO METRICS
-  Dense (A)            0.905   ▏▏▏▏▏▏▏▏▏▏ (near-tie)
-  Hybrid (B)           0.907   ▏▏▏▏▏▏▏▏▏▏ (best)
-  Hybrid+Rerank (C)    0.825   ▏▏▏▏▏▏▏     (worst)
+  Dense (A)            0.903   ▏▏▏▏▏▏▏▏▏▏ (close second)
+  Hybrid (B)           0.914   ▏▏▏▏▏▏▏▏▏▏ (best, on both metrics)
+  Hybrid+Rerank (C)    0.840   ▏▏▏▏▏▏▏     (worst)
 ```
 
 The same numbers, optionally rendered as a grouped bar chart:
@@ -2194,51 +2367,55 @@ xychart-beta
     title "RAGAS scores by retrieval method (higher is better)"
     x-axis ["Dense (A)", "Hybrid (B)", "Hybrid+Rerank (C)"]
     y-axis "Score" 0.70 --> 1.00
-    bar "Faithfulness" [0.873, 0.886, 0.750]
-    bar "Context Precision" [0.936, 0.928, 0.900]
+    bar "Faithfulness" [0.873, 0.890, 0.777]
+    bar "Context Precision" [0.933, 0.939, 0.903]
 ```
 
-**The A→C change, per metric:** faithfulness **−0.123** (0.873 → 0.750) and context
-precision **−0.036** (0.936 → 0.900). Adding the full reranking stage moved *both* metrics
-in the **wrong** direction on this corpus.
+**The A→C change, per metric:** faithfulness **−0.096** (0.873 → 0.777) and context
+precision **−0.030** (0.933 → 0.903). Adding the full reranking stage moved *both* metrics
+in the **wrong** direction on this corpus. Going A→B, by contrast, nudged *both* metrics
+**up** (faithfulness +0.017, context precision +0.006) — small, but consistent.
 
 ### 7.5 Honest Findings & Limitations
 
-**Finding 1 — Hybrid is best, but only barely, and dense is essentially tied.** Hybrid (B)
-takes the top average (0.907) over dense (0.905) — a difference of **0.002**, well within
-noise. The honest interpretation is that on this corpus, **adding the sparse channel
-barely changed anything**. This is exactly what Section 2.8 predicts: the sparse vectors do
-not align between ingestion and query (index-space mismatch + per-process hash salting), so
-the "hybrid" run is effectively dense retrieval fused with a near-empty list. The fusion
-machinery is correct; it has almost nothing to fuse. A working sparse channel is the single
-change most likely to separate B from A — and is recorded as future work.
+**Finding 1 — Hybrid is best on *both* metrics, by a small but consistent margin.** Hybrid
+(B) takes the top average (0.914) over dense (0.903), and — unlike the earlier broken run —
+it is now ahead on **faithfulness** (0.890 vs 0.873) *and* **context precision** (0.939 vs
+0.933). Crucially, with the sparse channel repaired (Section 2.8), dense and hybrid now
+retrieve **different** contexts on **all 30** questions, so the gap is a genuine retrieval
+effect, not an artifact: the context-precision judge is deterministic given a context set,
+so hybrid's higher score there (it differs from dense on 12 of 30 questions) is attributable
+to retrieval. We do **not** claim statistical significance — at n=30 the margin is small —
+but the direction is consistent across both metrics, which the earlier (silently dense-only)
+run could never show. This is the corrected core result: **the sparse channel earns its
+place, modestly, on this corpus.**
 
 **Finding 2 — Reranking *degraded* quality, via over-pruning.** The counter-intuitive
-headline: the most elaborate pipeline (C) scored **lowest**, and the damage is concentrated
-in **faithfulness**, which fell from ~0.87–0.89 to **0.75**. The most plausible mechanism is
-**over-pruning** — by aggressively cutting to a top-5 of parents, the cross-encoder
-sometimes drops a context block the answer actually needed; an answer missing one of its
-supporting sources is then judged less faithful. The cross-encoder is a powerful tool, but
-on a small, clean, single-domain corpus where dense retrieval is already precise, its
-pruning removes more signal than its reranking adds. This is the report's most useful
-result: **more pipeline is not automatically better**, and it took a real evaluation to
-show it.
+headline holds: the most elaborate pipeline (C) scored **lowest**, and the damage is
+concentrated in **faithfulness**, which fell from ~0.87–0.89 to **0.777** (−0.096 vs dense,
+−0.113 vs hybrid). The mechanism is **over-pruning** — the reranker keeps the top 8 under a
+per-source diversity cap, and parent-text deduplication then collapses those to about **four**
+context blocks (versus ~7–8 for A and B), roughly halving the material the generator sees. An
+answer missing one of its supporting sources is judged less faithful. The cross-encoder is a
+powerful tool, but on a small, clean, single-domain corpus where dense retrieval is already
+precise, its pruning removes more signal than its reranking adds. This is the report's most
+useful caution: **more pipeline is not automatically better**, and it took a real evaluation
+to show it.
 
 **Finding 3 — The retrieval differences are small because the corpus is easy.** All three
-methods score 0.90+ on context precision and ≥ 0.75 on faithfulness. Six well-structured
+methods score 0.90+ on context precision and ≥ 0.77 on faithfulness. Seven well-structured
 policy documents with distinct vocabularies are a relatively easy retrieval target; dense
-embeddings alone handle them well, leaving little headroom for hybrid or reranking to
-demonstrate value. The methods would likely separate more on a larger, noisier, more
+embeddings alone already handle them well, leaving little headroom for hybrid or reranking to
+demonstrate large value. The methods would likely separate more on a larger, noisier, more
 overlapping corpus — a direction for future evaluation.
 
 **Limitations, stated plainly:**
 
-- **The sparse channel is non-functional** (Section 2.8), so "hybrid" here is not a fully
-  realized hybrid. The B-vs-A comparison should be read with that caveat.
-- **One faithfulness cell is missing for hybrid** (29/30 scored — one question timed out or
-  errored on the local 7B and was recorded as NaN, then excluded from the mean), so hybrid's
-  faithfulness is a mean over 29, not 30. The harness records this honestly rather than
-  imputing a value.
+- **The sparse vector is a hashed term-frequency approximation, not a learned encoder.** It
+  now works (Section 2.8), but a learned sparse model (SPLADE, FastEmbed BM25) would likely
+  widen hybrid's edge; the small A-vs-B margin partly reflects this approximation.
+- **The corpus is small and clean.** Seven policy documents where dense retrieval is already
+  strong gives hybrid and reranking limited room to prove themselves.
 - **The K-asymmetry** is controlled by capping to precision@3 / faithfulness@2, but the
   methods still natively return different context counts; the cap is a normalization, not a
   perfect equalization.
@@ -2246,16 +2423,16 @@ overlapping corpus — a direction for future evaluation.
   than the generator and than a frontier judge would be; absolute scores would shift with a
   stronger judge, though the *relative* ordering of the three methods is the load-bearing
   result.
-- **Single corpus, single run.** Thirty questions over six documents, one generation pass.
+- **Single corpus, single run.** Thirty questions over seven documents, one generation pass.
   The findings are directional, not statistically powered; confidence intervals over
   multiple runs would strengthen any publication.
 
-**What the study contributes.** Despite the limitations, the evaluation does something many
-RAG write-ups do not: it runs a genuine controlled comparison with bias-controlled judges
-and **reports a negative result honestly** — that the reranker hurt on this corpus, and that
-the sparse channel (as implemented) added nothing. For an internship project aimed at a
-research venue, demonstrating the *discipline* to find and report those results is as
-valuable as a clean win would have been.
+**What the study contributes.** The evaluation does something many RAG write-ups do not: it
+runs a genuine controlled comparison with bias-controlled judges, **catches a bug that had
+silently disabled the sparse channel** (turning an earlier "hybrid ties dense" non-result
+into the real, corrected comparison), and **reports an honest negative result** — that the
+reranker hurt on this corpus. For an internship project aimed at a research venue,
+demonstrating the *discipline* to find, fix, and re-measure is as valuable as a clean win.
 
 ---
 
@@ -2305,17 +2482,19 @@ problem encountered and resolved; several left permanent fingerprints in the cod
 | **Over-citation / duplicate parents** | Overlapping children mapped to the same parent, so the model over-cited and tokens were wasted. | `_dedupe_by_parent` (first-200-char key), shared by prompt-building and source-extraction (same commit). |
 | **Qdrant client API change** | `qdrant-client` 1.18 removed `client.search(...)` and the `NamedVector` request objects. | Switch to `client.query_points(query=..., using="dense"|"sparse")`; documented inline in `retrieval_service.py`. |
 | **Embedding model deprecation** | `text-embedding-004` was deprecated 2026-01-14. | Move to `gemini-embedding-001` with Matryoshka truncation 3072 → 768. |
+| **Sparse channel silently dead** | Ingestion and query hashed words into *different* index spaces (100k vs 30k) using Python's per-process-salted `hash()`, so sparse retrieval found no matches and "hybrid" silently ran as dense-only — visible only as "hybrid mysteriously ties dense" in an early eval. | Switch both sides to a stable `hashlib.md5` hash in one shared 100,000-dim space; re-index all documents; widen rerank to top-8 + diversity cap. Re-running the eval shows hybrid best on both metrics (Sections 2.8, 7). |
 
-The sparse-channel **index/hash defect** (Section 2.8) is the one significant bug that
-remains *open* in the evaluated build; it is documented rather than silently patched so the
-Section 7 numbers stay attributable to the system that was actually measured.
+The sparse-channel index/hash defect (Section 2.8) was the subtlest bug in the project: it
+threw no error, only produced a *non-result* in the evaluation, and finding it required
+treating "hybrid ties dense" as suspicious rather than acceptable. Fixing it and re-running
+the study is what makes the Section 7 comparison a real one.
 
 ### 8.2 Known Limitations & Future Work
 
 | Area | Limitation | Future work |
 |------|-----------|-------------|
-| **Sparse retrieval** | Ingestion/query hash indices don't align (index space 100k vs 30k; salted `hash()`), so the channel is effectively dead. | Use a stable hash (`hashlib`) with a shared index space, or a learned sparse encoder (SPLADE / FastEmbed BM25). |
-| **Faithfulness judge** | A local 7B is weaker than the generator; one cell timed out (NaN). | A paid Groq tier or a frontier judge would restore Groq-side faithfulness and tighten scores. |
+| **Sparse retrieval** | Now a working but *approximate* hashed term-frequency vector (the index/hash bug is fixed); a learned model would catch more lexical signal. | Replace with a learned sparse encoder (SPLADE / FastEmbed BM25) for a stronger, more selective keyword channel. |
+| **Faithfulness judge** | A local 7B is weaker than the generator (though independent of it). | A paid Groq tier or a frontier judge would restore Groq-side faithfulness and tighten absolute scores. |
 | **Reranking** | Degrades faithfulness via over-pruning on this corpus. | Make rerank top-*n* adaptive, or skip reranking when dense confidence is already high. |
 | **Scanned PDFs** | Image-only pages are skipped (no text), failing the document. | Add OCR (e.g. Tesseract) as an ingestion fallback. |
 | **SSE framing** | A token containing a newline technically breaks strict one-frame-per-token SSE. | Emit one `data:` line per line of the token (lossless framing). |

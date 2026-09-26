@@ -52,7 +52,7 @@ export default function HeroFlow() {
     const draw = (t: number) => {
       ctx.clearRect(0, 0, w, h);
       const breathe = 1 + 0.13 * Math.sin(t * 0.00007); // whole field breathes
-      const amberPos = 0.7; // amber line sits below the headline, clearly visible
+      const amberPos = 0.45; // amber signal line sweeps through the middle of the stage
       const step = Math.max(7, w / 130);
 
       for (let i = 0; i < lineCount; i++) {
@@ -61,7 +61,12 @@ export default function HeroFlow() {
         // Calmer + fainter through the middle (behind the headline), more
         // present toward the top/bottom edges — the text parts the currents.
         const edge = Math.abs(Math.cos(pos * Math.PI)); // 1 at edges, 0 centre
-        const amp = h * 0.02 * (0.5 + 0.5 * edge) * breathe;
+        const isAmber = Math.abs(pos - amberPos) < 0.5 / (lineCount + 1);
+        // The amber signal line sweeps with a larger amplitude so it reads as
+        // one clear current; the paper lines stay faint and shallow.
+        const amp = isAmber
+          ? h * 0.055 * breathe
+          : h * 0.02 * (0.5 + 0.5 * edge) * breathe;
         const phase = i * 0.55;
 
         ctx.beginPath();
@@ -79,13 +84,12 @@ export default function HeroFlow() {
           else ctx.lineTo(x, y);
         }
 
-        const isAmber = Math.abs(pos - amberPos) < 0.5 / (lineCount + 1);
         if (isAmber) {
           ctx.strokeStyle = amber;
-          ctx.globalAlpha = 0.6;
-          ctx.lineWidth = 1.6;
-          ctx.shadowColor = amber;
-          ctx.shadowBlur = 12;
+          // No glow (DESIGN.md bans glow/neon): a slightly higher alpha keeps the
+          // single amber signal line readable without a shadow blur.
+          ctx.globalAlpha = 0.82;
+          ctx.lineWidth = 1.5;
         } else {
           ctx.strokeStyle = paper;
           ctx.globalAlpha = 0.08 + 0.12 * edge; // fainter in the calm centre

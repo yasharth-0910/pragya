@@ -2,7 +2,8 @@
 
 import { useEffect, useState, type ReactElement } from "react";
 import Link from "next/link";
-import { getDocumentStatus } from "@/lib/api";
+import { deleteDocument, getDocumentStatus } from "@/lib/api";
+import { getUser } from "@/lib/auth";
 import type { Document } from "@/types";
 import ProgressBar from "./ProgressBar";
 
@@ -47,6 +48,14 @@ function LockIcon() {
   );
 }
 
+function TrashIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 // Small visibility badge for the card's top-right. Personal is amber (the most
 // distinctive state — the user should notice a private doc); company/department
 // use the quiet chip colors.
@@ -79,13 +88,28 @@ function formatFileSize(bytes: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-type DocumentCardProps = { doc: Document };
+type DocumentCardProps = { doc: Document; onDeleted?: () => void };
 
-export default function DocumentCard({ doc }: DocumentCardProps) {
+export default function DocumentCard({ doc, onDeleted }: DocumentCardProps) {
   // Local status so a card can advance itself from "processing" to "ready" via
   // polling, without the parent re-fetching the whole list.
   const [status, setStatus] = useState(doc.status);
   const [chunkCount, setChunkCount] = useState<number | null>(doc.chunk_count);
+  // useState initializer runs client-side only — safe for localStorage-backed getUser().
+  const [isAdmin] = useState(() => getUser()?.role === "admin");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      await deleteDocument(doc.id);
+      onDeleted?.();
+    } catch {
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  }
 
   useEffect(() => {
     // Only poll while there's something to wait for. Stop once ready or failed.
@@ -130,9 +154,41 @@ export default function DocumentCard({ doc }: DocumentCardProps) {
                 Intelligence ready
               </span>
             )}
-            {/* Visibility badge — pinned to the card's top-right. */}
-            <span className="ml-auto pl-2">
-              <VisibilityBadge visibility={doc.visibility} />
+            {/* Visibility badge + delete (admin only) — pinned to the card's top-right. */}
+            <span className="ml-auto flex shrink-0 items-center gap-2 pl-2">
+              {confirmDelete ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={deleting}
+                    onClick={handleDelete}
+                    className="interactive font-mono text-[10px] text-red-500 hover:text-red-600 disabled:opacity-50"
+                  >
+                    {deleting ? "Deleting…" : "Confirm?"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(false)}
+                    className="interactive font-mono text-[10px] text-muted hover:text-primary"
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <>
+                  <VisibilityBadge visibility={doc.visibility} />
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDelete(true)}
+                      aria-label="Delete document"
+                      className="interactive text-muted hover:text-red-500"
+                    >
+                      <TrashIcon />
+                    </button>
+                  )}
+                </>
+              )}
             </span>
           </div>
 

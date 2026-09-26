@@ -15,9 +15,7 @@ from qdrant_client.models import (
     Filter,
     MatchValue,
     PayloadSchemaType,
-    PointStruct,
     SparseIndexParams,
-    SparseVector,
     SparseVectorParams,
     VectorParams,
 )
