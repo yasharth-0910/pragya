@@ -248,7 +248,7 @@ export default function ChatMessage({ content, sources, traceMs, streaming }: Ch
         {/* Signature trace line — only shown when answer is grounded */}
         {hasSources && (
           <div className="mt-2 font-mono text-[9.5px] text-muted">
-            hybrid → rrf → rerank(5){traceMs != null && ` · ${traceMs}ms`}
+            hybrid → rrf → rerank(8){traceMs != null && ` · ${traceMs}ms`}
           </div>
         )}
       </div>

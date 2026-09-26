@@ -208,7 +208,7 @@ function RetrieveVisual() {
         ))}
       </div>
       <div className="mt-6 font-mono text-[10.5px] tracking-[0.06em] text-muted">
-        dense + bm25 → rrf → rerank → <span className="text-chip-text">top 5</span>
+        dense + bm25 → rrf → rerank → <span className="text-chip-text">top 8</span>
       </div>
       <p className="mt-4 font-sans text-[14px] text-muted">{STAGES[1].blurb}</p>
     </div>

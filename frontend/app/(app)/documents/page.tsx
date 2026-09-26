@@ -229,7 +229,7 @@ export default function DocumentsPage() {
             ) : (
               <div className="space-y-2.5">
                 {visibleDocuments.map((doc) => (
-                  <DocumentCard key={doc.id} doc={doc} />
+                  <DocumentCard key={doc.id} doc={doc} onDeleted={() => mutate()} />
                 ))}
               </div>
             )}

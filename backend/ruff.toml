@@ -1,0 +1,7 @@
+# Classic ruff defaults, stated explicitly: newer ruff releases widen the implicit
+# default set (0.16 adds import sorting, pyupgrade, etc.), which would make CI
+# break on a tool upgrade instead of on a code change.
+extend-exclude = ["venv", "evaluation"]  # evaluation/ = one-off research scripts
+
+[lint]
+select = ["E4", "E7", "E9", "F"]

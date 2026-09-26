@@ -134,6 +134,16 @@ export async function getDocumentStatus(id: string): Promise<DocumentStatus> {
   return handle<DocumentStatus>(res);
 }
 
+/** DELETE /documents/{id} — permanently remove a document and its Qdrant vectors.
+ *  Admin only. Returns 204 on success. */
+export async function deleteDocument(id: string): Promise<void> {
+  const res = await fetch(`${API_URL}/documents/${id}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  await handle<void>(res);
+}
+
 /** GET /documents[?status_filter=...] — list the caller's department documents.
  *  Note the backend query param is `status_filter` (e.g. "ready"), not `status`. */
 export async function getDocuments(status?: string): Promise<Document[]> {

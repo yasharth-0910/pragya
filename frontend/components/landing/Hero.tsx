@@ -4,10 +4,11 @@ import { motion, useReducedMotion, type Variants } from "motion/react";
 import Reveal from "./Reveal";
 import Magnetic from "./Magnetic";
 
-// Hero content for the dark ink stage. Sits in front of the particle backdrop,
-// so all text is paper-toned for contrast on ink. The headline animates in by
-// word/line (Phase 4) — the one headline that gets this treatment; everything
-// else uses the calmer Reveal rise. Reduced motion shows all of it static.
+// Hero content for the dark ink stage. Left-aligned over the flowing-lines
+// canvas, with the left-fade gradient (HeroBackdrop) keeping the copy readable.
+// All text is paper-toned for contrast on ink. The headline animates in by
+// word/line (the one headline that gets this treatment); everything else uses
+// the calmer Reveal rise. Reduced motion shows all of it static.
 const headlineContainer: Variants = {
   hidden: {},
   show: { transition: { staggerChildren: 0.1, delayChildren: 0.15 } },
@@ -22,12 +23,11 @@ export default function Hero() {
 
   return (
     <div className="flex flex-1 flex-col justify-center pb-24 pt-24 sm:pb-28">
-      <div className="mx-auto w-full max-w-2xl text-center">
-        {/* Mono kicker — a single amber "signal" dot then a quiet label. */}
+      <div className="w-full max-w-[880px] text-left">
+        {/* Mono kicker — quiet, dotless, the way the design reads it. */}
         <Reveal delay={40}>
-          <div className="mb-7 inline-flex max-w-full items-center gap-2.5 font-mono text-[10px] uppercase tracking-[0.16em] text-paper/55 sm:text-[10.5px] sm:tracking-[0.18em]">
-            <span className="h-[5px] w-[5px] shrink-0 rounded-full bg-accent shadow-[0_0_8px_1px_var(--accent)]" />
-            Grounded in your documents
+          <div className="mb-6 font-mono text-[10px] uppercase tracking-[0.16em] text-paper/55 sm:text-[10.5px] sm:tracking-[0.18em]">
+            Enterprise RAG · cited · self-hosted
           </div>
         </Reveal>
 
@@ -37,31 +37,33 @@ export default function Hero() {
           variants={headlineContainer}
           initial={reduceMotion ? false : "hidden"}
           animate="show"
-          className="font-serif text-[clamp(1.85rem,6.5vw,4.25rem)] leading-[1.08] tracking-[-0.02em] text-paper"
+          className="max-w-[14ch] font-serif text-[clamp(2.25rem,6.4vw,4rem)] leading-[1.04] tracking-[-0.02em] text-paper"
         >
           <motion.span variants={headlineWord} className="inline-block">Every</motion.span>{" "}
-          <motion.span variants={headlineWord} className="inline-block">answer,</motion.span>
-          <br className="hidden sm:block" />{" "}
+          <motion.span variants={headlineWord} className="inline-block">answer,</motion.span>{" "}
+          <motion.span variants={headlineWord} className="inline-block">with</motion.span>
+          <br />
           <motion.span variants={headlineWord} className="inline-block hl-mark">
-            with its source.
+            its source.
           </motion.span>
         </motion.h1>
 
         <Reveal delay={450}>
-          <p className="mx-auto mt-7 max-w-xl font-sans text-[15px] leading-[1.75] text-paper/70">
-            Pragya reads your team&rsquo;s documents and answers in plain language —
-            every claim traced back to the exact file and page it came from.
+          <p className="mt-7 max-w-[46ch] font-sans text-[15px] leading-[1.75] text-paper/70">
+            Pragya answers employee questions using only the documents
+            they&rsquo;re allowed to see — and cites the exact file and page
+            behind every claim. A calm library, with an engine room underneath.
           </p>
         </Reveal>
 
         <Reveal delay={600}>
-          <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            {/* Primary on the dark stage = the dark-mode button (paper fill, ink
-                text), per DESIGN.md §5. Both CTAs are magnetic on desktop. */}
+          <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
+            {/* Primary CTA is the amber accent pill (design-led), ink text. Both
+                CTAs are magnetic on desktop. */}
             <Magnetic>
               <a
                 href="/login"
-                className="interactive block w-full rounded-full bg-paper px-7 py-3 font-sans text-[14px] text-ink-2 hover:opacity-90 active:scale-[0.98] sm:w-auto"
+                className="interactive block w-full rounded-full bg-accent px-7 py-3 text-center font-sans text-[14px] text-ink hover:-translate-y-px active:scale-[0.98] sm:w-auto"
               >
                 Start free
               </a>
@@ -69,7 +71,7 @@ export default function Hero() {
             <Magnetic>
               <a
                 href="#how-it-works"
-                className="interactive block w-full rounded-full border border-paper/25 px-7 py-3 font-sans text-[14px] text-paper hover:bg-paper/10 active:scale-[0.98] sm:w-auto"
+                className="interactive block w-full rounded-full border border-paper/25 px-7 py-3 text-center font-sans text-[14px] text-paper hover:-translate-y-px hover:border-accent active:scale-[0.98] sm:w-auto"
               >
                 See the method
               </a>

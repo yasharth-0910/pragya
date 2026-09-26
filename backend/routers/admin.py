@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
-from middleware.rbac import get_current_user, require_admin
+from middleware.rbac import require_admin
 from models.user import Department, User
 from schemas.department import DepartmentWithCountResponse, RoleUpdateRequest, UserAdminResponse
 
